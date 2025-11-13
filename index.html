@@ -4,10 +4,241 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Partnerships Careers - Find Your Next Partnership Role</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .animate-spin { animation: spin 1s linear infinite; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    
+    <script type="text/babel">
+      const { useState, useMemo, useEffect } = React;
+      
+      const SHEETY_API = 'https://api.sheety.co/4ce55d1d0ad684ea192b042bd2f3b53d/partnershipsCareersDb/sheet1';
+      
+      const LEVELS = ['Manager', 'Director', 'VP', 'Chief'];
+      const CATEGORIES = [
+        'Ecosystem & Platform',
+        'Channel & Reseller',
+        'Strategic Alliances with Hyperscalers/SIs',
+        'Product & OEM Partnerships',
+        'Corporate Development & Venture Partnerships'
+      ];
+
+      function App() {
+        const [jobs, setJobs] = useState([]);
+        const [selectedLevel, setSelectedLevel] = useState('All');
+        const [selectedCategory, setSelectedCategory] = useState('All');
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState(null);
+
+        useEffect(() => {
+          fetchJobs();
+        }, []);
+
+        const fetchJobs = async () => {
+          setLoading(true);
+          setError(null);
+          try {
+            const response = await fetch(SHEETY_API);
+            if (!response.ok) throw new Error('Failed to fetch jobs');
+            const data = await response.json();
+            const jobsArray = data.sheet1 || [];
+            const transformedJobs = jobsArray.map(job => ({
+              id: job.id?.toString() || '',
+              title: job.title || '',
+              company: job.company || '',
+              location: job.location || '',
+              type: job.type || '',
+              salaryRange: job.salaryRange || '',
+              level: job.level || '',
+              category: job.category || '',
+              description: job.description || '',
+              postedDate: job.postedDate || '',
+              employerId: job.employerId || '',
+              link: job.link || '',
+              isFeatured: job.isFeatured === true
+            }));
+            setJobs(transformedJobs);
+          } catch (err) {
+            setError('Error loading jobs: ' + err.message);
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        const filteredJobs = useMemo(() => {
+          return jobs.filter(job => {
+            const matchesLevel = selectedLevel === 'All' || job.level === selectedLevel;
+            const matchesCategory = selectedCategory === 'All' || job.category === selectedCategory;
+            return matchesLevel && matchesCategory;
+          });
+        }, [jobs, selectedLevel, selectedCategory]);
+
+        const featuredJobs = filteredJobs.filter(job => job.isFeatured);
+        const regularJobs = filteredJobs.filter(job => !job.isFeatured);
+
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+            <header className="bg-white shadow-sm border-b border-gray-200">
+              <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <div className="text-xl font-bold text-gray-900">Partnerships Careers</div>
+                  </div>
+                  <button className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">
+                    Employer Login
+                  </button>
+                </div>
+              </div>
+            </header>
+
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-16">
+              <div className="max-w-7xl mx-auto px-4">
+                <h1 className="text-5xl font-bold mb-4">Your Career in Partnerships Starts Here</h1>
+                <p className="text-xl mb-6">Connect with top companies hiring for partnership roles.</p>
+                <div className="flex gap-4">
+                  <div className="bg-white/10 px-4 py-2 rounded-lg">
+                    <div className="font-bold text-2xl">{jobs.length}</div>
+                    <div>Active Jobs</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="max-w-7xl mx-auto px-4 py-8">
+              <div className="bg-white rounded-lg shadow p-6 mb-8">
+                <div className="flex justify-between mb-6">
+                  <h3 className="text-lg font-bold">Filter Jobs</h3>
+                  <button onClick={fetchJobs} className="text-indigo-600">Refresh</button>
+                </div>
+
+                <div className="mb-6">
+                  <h3 className="text-sm font-bold mb-3">Filter by Role Level</h3>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={() => setSelectedLevel('All')}
+                      className={`px-5 py-2 rounded-full ${selectedLevel === 'All' ? 'bg-indigo-600 text-white' : 'bg-gray-100'}`}
+                    >
+                      All Levels
+                    </button>
+                    {LEVELS.map(level => (
+                      <button
+                        key={level}
+                        onClick={() => setSelectedLevel(level)}
+                        className={`px-5 py-2 rounded-full ${selectedLevel === level ? 'bg-indigo-600 text-white' : 'bg-gray-100'}`}
+                      >
+                        {level}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-bold mb-3">Filter by Partnership Type</h3>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={() => setSelectedCategory('All')}
+                      className={`px-5 py-2 rounded-full ${selectedCategory === 'All' ? 'bg-indigo-600 text-white' : 'bg-gray-100'}`}
+                    >
+                      All Categories
+                    </button>
+                    {CATEGORIES.map(category => (
+                      <button
+                        key={category}
+                        onClick={() => setSelectedCategory(category)}
+                        className={`px-5 py-2 rounded-full ${selectedCategory === category ? 'bg-indigo-600 text-white' : 'bg-gray-100'}`}
+                      >
+                        {category}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {loading && <div className="text-center py-12">Loading jobs...</div>}
+              {error && <div className="bg-red-50 p-6 rounded">{error}</div>}
+
+              {!loading && !error && (
+                <>
+                  {featuredJobs.length > 0 && (
+                    <div className="mb-8">
+                      <h2 className="text-2xl font-bold mb-4">⭐ Featured Jobs</h2>
+                      {featuredJobs.map(job => (
+                        <div key={job.id} className="bg-white rounded-lg shadow p-6 mb-4 border-2 border-yellow-400">
+                          <div className="flex justify-between mb-4">
+                            <div>
+                              <h3 className="text-xl font-bold">{job.title}</h3>
+                              <p className="text-lg text-gray-700">{job.company}</p>
+                            </div>
+                            <span className="bg-indigo-100 px-3 py-1 rounded-full text-sm">{job.level}</span>
+                          </div>
+                          <p className="text-gray-600 mb-4">{job.description}</p>
+                          <div className="flex gap-4 text-sm text-gray-600 mb-4">
+                            <span>📍 {job.location}</span>
+                            {job.type && <span>💼 {job.type}</span>}
+                          </div>
+                          <div className="mb-4">
+                            <span className="bg-gray-100 px-3 py-1 rounded-full text-sm">{job.category}</span>
+                          </div>
+                          <a href={job.link} target="_blank" className="bg-indigo-600 text-white px-6 py-2 rounded-lg inline-block">
+                            Apply Now
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {regularJobs.length > 0 && (
+                    <div>
+                      <h2 className="text-2xl font-bold mb-4">All Jobs</h2>
+                      {regularJobs.map(job => (
+                        <div key={job.id} className="bg-white rounded-lg shadow p-6 mb-4">
+                          <div className="flex justify-between mb-4">
+                            <div>
+                              <h3 className="text-xl font-bold">{job.title}</h3>
+                              <p className="text-lg text-gray-700">{job.company}</p>
+                            </div>
+                            <span className="bg-indigo-100 px-3 py-1 rounded-full text-sm">{job.level}</span>
+                          </div>
+                          <p className="text-gray-600 mb-4">{job.description}</p>
+                          <div className="flex gap-4 text-sm text-gray-600 mb-4">
+                            <span>📍 {job.location}</span>
+                            {job.type && <span>💼 {job.type}</span>}
+                          </div>
+                          <div className="mb-4">
+                            <span className="bg-gray-100 px-3 py-1 rounded-full text-sm">{job.category}</span>
+                          </div>
+                          <a href={job.link} target="_blank" className="bg-indigo-600 text-white px-6 py-2 rounded-lg inline-block">
+                            Apply Now
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {filteredJobs.length === 0 && (
+                    <div className="text-center py-12">
+                      <h3 className="text-xl font-bold mb-2">No jobs found</h3>
+                      <p>Try adjusting your filters</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
   </body>
 </html>
