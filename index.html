@@ -34,6 +34,8 @@ const [error, setError] = useState(null);
 const [showEmployerLogin, setShowEmployerLogin] = useState(false);
 const [isSignUp, setIsSignUp] = useState(false);
 const [email, setEmail] = useState('');
+const [isEmployerLoggedIn, setIsEmployerLoggedIn] = useState(false);
+const [employerCompany, setEmployerCompany] = useState('');
 
             useEffect(() => {
                 fetchJobs();
@@ -69,6 +71,73 @@ const [email, setEmail] = useState('');
             const featuredJobs = filteredJobs.filter(job => job.isFeatured);
             const regularJobs = filteredJobs.filter(job => !job.isFeatured);
 
+// Employer Dashboard
+if (isEmployerLoggedIn) {
+    const employerJobs = jobs.filter(job => job.company === 'Reality Defender'); // You'll customize this
+    
+    return React.createElement('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100' },
+        React.createElement('header', { className: 'bg-white shadow-sm border-b' },
+            React.createElement('div', { className: 'max-w-7xl mx-auto px-4 py-4 flex justify-between items-center' },
+                React.createElement('h1', { className: 'text-xl font-bold' }, '👔 Employer Dashboard'),
+                React.createElement('div', { className: 'flex gap-4' },
+                    React.createElement('button', { 
+                        onClick: () => {
+                            setIsEmployerLoggedIn(false);
+                            setEmployerCompany('');
+                        },
+                        className: 'text-gray-600 hover:text-gray-900'
+                    }, 'View Job Board'),
+                    React.createElement('button', { 
+                        onClick: () => {
+                            setIsEmployerLoggedIn(false);
+                            setEmployerCompany('');
+                        },
+                        className: 'text-red-600 hover:text-red-700'
+                    }, 'Log Out')
+                )
+            )
+        ),
+        React.createElement('div', { className: 'max-w-7xl mx-auto px-4 py-8' },
+            React.createElement('div', { className: 'bg-white rounded-lg shadow p-6 mb-8' },
+                React.createElement('h2', { className: 'text-2xl font-bold mb-2' }, `Welcome back, ${employerCompany}!`),
+                React.createElement('p', { className: 'text-gray-600' }, 'Manage your job listings and promote them for better visibility')
+            ),
+            React.createElement('div', { className: 'bg-white rounded-lg shadow p-6' },
+                React.createElement('h3', { className: 'text-xl font-bold mb-4' }, 'Your Job Listings'),
+                employerJobs.length === 0 ? 
+                    React.createElement('div', { className: 'text-center py-12 text-gray-500' },
+                        React.createElement('p', null, 'No job listings yet. This will show jobs from your company once Firebase is connected.')
+                    ) :
+                    React.createElement('div', { className: 'space-y-4' },
+                        employerJobs.map(job => 
+                            React.createElement('div', { 
+                                key: job.id,
+                                className: 'border rounded-lg p-4'
+                            },
+                                React.createElement('h4', { className: 'font-bold mb-2' }, job.title),
+                                React.createElement('p', { className: 'text-sm text-gray-600' }, 
+                                    job.isFeatured ? '⭐ Featured' : 'Standard Listing'
+                                ),
+                                !job.isFeatured && React.createElement('button', { 
+                                    className: 'mt-4 bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600'
+                                }, '⭐ Promote This Job - $99')
+                            )
+                        )
+                    )
+            ),
+            React.createElement('div', { className: 'bg-indigo-50 border border-indigo-200 rounded-lg p-6 mt-8' },
+                React.createElement('h3', { className: 'font-bold text-indigo-900 mb-2' }, '🚀 Phase 2: Real Features Coming'),
+                React.createElement('ul', { className: 'text-indigo-800 text-sm space-y-1' },
+                    React.createElement('li', null, '✓ Real authentication with Firebase'),
+                    React.createElement('li', null, '✓ Actual payment processing with Stripe'),
+                    React.createElement('li', null, '✓ Job management (add, edit, delete)'),
+                    React.createElement('li', null, '✓ Access to premium candidate profiles')
+                )
+            )
+        )
+    );
+}
+            
 if (showEmployerLogin) {
     
     
@@ -86,33 +155,35 @@ if (showEmployerLogin) {
                 React.createElement('h2', { className: 'text-2xl font-bold text-gray-900 mb-6' }, isSignUp ? 'Create Employer Account' : 'Employer Login'),
                 React.createElement('form', { 
     className: 'space-y-4 mb-6', 
-    onSubmit: (e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        const email = formData.get('email');
-        const password = formData.get('password');
-        const confirmPassword = formData.get('confirmPassword');
-        const company = formData.get('company');
-        
-        // Validation
-        if (isSignUp) {
-            if (password.length < 8) {
-                alert('Password must be at least 8 characters long');
-                return;
-            }
-            if (password !== confirmPassword) {
-                alert('Passwords do not match');
-                return;
-            }
-            if (!company || company.trim() === '') {
-                alert('Please enter your company name');
-                return;
-            }
+   onSubmit: (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const emailInput = formData.get('email');
+    const password = formData.get('password');
+    const confirmPassword = formData.get('confirmPassword');
+    const company = formData.get('company');
+    
+    // Validation
+    if (isSignUp) {
+        if (password.length < 8) {
+            alert('Password must be at least 8 characters long');
+            return;
         }
-        
-        alert('✅ Form validated! Firebase Authentication will handle actual signup/login in Phase 2.');
+        if (password !== confirmPassword) {
+            alert('Passwords do not match');
+            return;
+        }
+        if (!company || company.trim() === '') {
+            alert('Please enter your company name');
+            return;
+        }
     }
-},
+    
+    // "Login" - set logged in state and redirect to dashboard
+    setEmployerCompany(company || 'Your Company');
+    setIsEmployerLoggedIn(true);
+    setShowEmployerLogin(false);
+}
     React.createElement('div', null,
         React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'Email Address'),
         React.createElement('input', { 
