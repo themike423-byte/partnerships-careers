@@ -7,6 +7,49 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCkWWc1eVRQ9-7PkPCI2DpCdUvojP4a1B4",
+            authDomain: "partnerships-careers.firebaseapp.com",
+            projectId: "partnerships-careers",
+            storageBucket: "partnerships-careers.firebasestorage.app",
+            messagingSenderId: "1056227088220",
+            appId: "1:1056227088220:web:e21d57b944758087c79399"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const googleProvider = new GoogleAuthProvider();
+
+        // Make Firebase available globally
+        window.firebaseAuth = auth;
+        window.firebaseDb = db;
+        window.googleProvider = googleProvider;
+        window.firebaseAuthFunctions = {
+            createUserWithEmailAndPassword,
+            signInWithEmailAndPassword,
+            signInWithPopup,
+            onAuthStateChanged,
+            signOut,
+            GoogleAuthProvider
+        };
+        window.firestoreFunctions = {
+            doc,
+            setDoc,
+            getDoc
+        };
+
+        console.log('Firebase initialized successfully');
+    </script>
 </head>
 <body>
     <div id="root"></div>
@@ -37,9 +80,47 @@
             const [isEmployerLoggedIn, setIsEmployerLoggedIn] = useState(false);
             const [employerCompany, setEmployerCompany] = useState('');
             const [employerFirstName, setEmployerFirstName] = useState('');
+            const [currentUser, setCurrentUser] = useState(null);
+            const [authLoading, setAuthLoading] = useState(true);
 
             useEffect(() => {
                 fetchJobs();
+                
+                // Check for existing authentication
+                const checkAuth = async () => {
+                    if (!window.firebaseAuth || !window.firebaseAuthFunctions) {
+                        setTimeout(checkAuth, 100);
+                        return;
+                    }
+
+                    const { onAuthStateChanged } = window.firebaseAuthFunctions;
+                    const { doc, getDoc } = window.firestoreFunctions;
+                    
+                    onAuthStateChanged(window.firebaseAuth, async (user) => {
+                        if (user) {
+                            setCurrentUser(user);
+                            
+                            // Fetch user data from Firestore
+                            try {
+                                const userDoc = await getDoc(doc(window.firebaseDb, 'employers', user.uid));
+                                if (userDoc.exists()) {
+                                    const userData = userDoc.data();
+                                    setEmployerFirstName(userData.firstName || 'there');
+                                    setEmployerCompany(userData.company || 'Your Company');
+                                    setIsEmployerLoggedIn(true);
+                                }
+                            } catch (err) {
+                                console.error('Error fetching user data:', err);
+                            }
+                        } else {
+                            setCurrentUser(null);
+                            setIsEmployerLoggedIn(false);
+                        }
+                        setAuthLoading(false);
+                    });
+                };
+                
+                checkAuth();
             }, []);
 
             const fetchJobs = async () => {
@@ -72,9 +153,128 @@
             const featuredJobs = filteredJobs.filter(job => job.isFeatured);
             const regularJobs = filteredJobs.filter(job => !job.isFeatured);
 
+            const handleSignUp = async (email, password, firstName, company) => {
+                try {
+                    const { createUserWithEmailAndPassword } = window.firebaseAuthFunctions;
+                    const { doc, setDoc } = window.firestoreFunctions;
+                    
+                    const userCredential = await createUserWithEmailAndPassword(window.firebaseAuth, email, password);
+                    const user = userCredential.user;
+                    
+                    // Store user data in Firestore
+                    await setDoc(doc(window.firebaseDb, 'employers', user.uid), {
+                        email: email,
+                        firstName: firstName,
+                        company: company,
+                        createdAt: new Date().toISOString()
+                    });
+                    
+                    setEmployerFirstName(firstName);
+                    setEmployerCompany(company);
+                    setIsEmployerLoggedIn(true);
+                    setShowEmployerLogin(false);
+                    alert('Account created successfully!');
+                } catch (error) {
+                    console.error('Sign up error:', error);
+                    alert('Error creating account: ' + error.message);
+                }
+            };
+
+            const handleLogin = async (email, password) => {
+                try {
+                    const { signInWithEmailAndPassword } = window.firebaseAuthFunctions;
+                    const { doc, getDoc } = window.firestoreFunctions;
+                    
+                    const userCredential = await signInWithEmailAndPassword(window.firebaseAuth, email, password);
+                    const user = userCredential.user;
+                    
+                    // Fetch user data from Firestore
+                    const userDoc = await getDoc(doc(window.firebaseDb, 'employers', user.uid));
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        setEmployerFirstName(userData.firstName || 'there');
+                        setEmployerCompany(userData.company || 'Your Company');
+                    }
+                    
+                    setIsEmployerLoggedIn(true);
+                    setShowEmployerLogin(false);
+                    alert('Logged in successfully!');
+                } catch (error) {
+                    console.error('Login error:', error);
+                    alert('Error logging in: ' + error.message);
+                }
+            };
+
+            const handleGoogleSignIn = async () => {
+                try {
+                    const { signInWithPopup } = window.firebaseAuthFunctions;
+                    const { doc, setDoc, getDoc } = window.firestoreFunctions;
+                    
+                    const result = await signInWithPopup(window.firebaseAuth, window.googleProvider);
+                    const user = result.user;
+                    
+                    // Check if user data exists, if not create it
+                    const userDoc = await getDoc(doc(window.firebaseDb, 'employers', user.uid));
+                    
+                    if (!userDoc.exists()) {
+                        // First time sign in with Google - ask for company name
+                        const company = prompt('Please enter your company name:');
+                        if (!company) {
+                            alert('Company name is required');
+                            await window.firebaseAuthFunctions.signOut(window.firebaseAuth);
+                            return;
+                        }
+                        
+                        const firstName = user.displayName ? user.displayName.split(' ')[0] : 'there';
+                        
+                        await setDoc(doc(window.firebaseDb, 'employers', user.uid), {
+                            email: user.email,
+                            firstName: firstName,
+                            company: company,
+                            createdAt: new Date().toISOString()
+                        });
+                        
+                        setEmployerFirstName(firstName);
+                        setEmployerCompany(company);
+                    } else {
+                        const userData = userDoc.data();
+                        setEmployerFirstName(userData.firstName || 'there');
+                        setEmployerCompany(userData.company || 'Your Company');
+                    }
+                    
+                    setIsEmployerLoggedIn(true);
+                    setShowEmployerLogin(false);
+                } catch (error) {
+                    console.error('Google sign in error:', error);
+                    alert('Error signing in with Google: ' + error.message);
+                }
+            };
+
+            const handleLogout = async () => {
+                try {
+                    const { signOut } = window.firebaseAuthFunctions;
+                    await signOut(window.firebaseAuth);
+                    setIsEmployerLoggedIn(false);
+                    setEmployerCompany('');
+                    setEmployerFirstName('');
+                    setCurrentUser(null);
+                    alert('Logged out successfully');
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    alert('Error logging out: ' + error.message);
+                }
+            };
+
+            // Show loading while checking auth
+            if (authLoading) {
+                return React.createElement('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center' },
+                    React.createElement('div', { className: 'text-xl' }, '🔄 Loading...')
+                );
+            }
+
             // Employer Dashboard
             if (isEmployerLoggedIn) {
-                const employerJobs = jobs.filter(job => job.company === 'Reality Defender');
+                const employerJobs = jobs.filter(job => job.company === employerCompany);
                 
                 return React.createElement('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100' },
                     React.createElement('header', { className: 'bg-white shadow-sm border-b' },
@@ -82,19 +282,11 @@
                             React.createElement('h1', { className: 'text-xl font-bold' }, '👔 Employer Dashboard'),
                             React.createElement('div', { className: 'flex gap-4' },
                                 React.createElement('button', { 
-                                    onClick: () => {
-                                        setIsEmployerLoggedIn(false);
-                                        setEmployerCompany('');
-                                        setEmployerFirstName('');
-                                    },
+                                    onClick: () => setIsEmployerLoggedIn(false),
                                     className: 'text-gray-600 hover:text-gray-900'
                                 }, 'View Job Board'),
                                 React.createElement('button', { 
-                                    onClick: () => {
-                                        setIsEmployerLoggedIn(false);
-                                        setEmployerCompany('');
-                                        setEmployerFirstName('');
-                                    },
+                                    onClick: handleLogout,
                                     className: 'text-red-600 hover:text-red-700'
                                 }, 'Log Out')
                             )
@@ -109,20 +301,23 @@
                             React.createElement('h3', { className: 'text-xl font-bold mb-4' }, 'Your Job Listings'),
                             employerJobs.length === 0 ? 
                                 React.createElement('div', { className: 'text-center py-12 text-gray-500' },
-                                    React.createElement('p', null, 'No job listings yet. This will show jobs from your company once Firebase is connected.')
+                                    React.createElement('p', { className: 'mb-2' }, `No job listings found for ${employerCompany}.`),
+                                    React.createElement('p', { className: 'text-sm' }, 'Jobs from your company will appear here once added to the database.')
                                 ) :
                                 React.createElement('div', { className: 'space-y-4' },
-                                    employerJobs.map(job => 
+                                    employerJobs.map((job, index) => 
                                         React.createElement('div', { 
-                                            key: job.id,
+                                            key: job.id || index,
                                             className: 'border rounded-lg p-4'
                                         },
                                             React.createElement('h4', { className: 'font-bold mb-2' }, job.title),
-                                            React.createElement('p', { className: 'text-sm text-gray-600' }, 
+                                            React.createElement('p', { className: 'text-sm text-gray-600 mb-2' }, 
                                                 job.isFeatured ? '⭐ Featured' : 'Standard Listing'
                                             ),
+                                            React.createElement('p', { className: 'text-sm text-gray-500 mb-4' }, `${job.level} • ${job.location}`),
                                             !job.isFeatured && React.createElement('button', { 
-                                                className: 'mt-4 bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600'
+                                                className: 'bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600',
+                                                onClick: () => alert('Payment integration coming soon with Stripe!')
                                             }, '⭐ Promote This Job - $99')
                                         )
                                     )
@@ -148,7 +343,7 @@
                             React.createElement('h2', { className: 'text-2xl font-bold text-gray-900 mb-6' }, isSignUp ? 'Create Employer Account' : 'Employer Login'),
                             React.createElement('form', { 
                                 className: 'space-y-4 mb-6', 
-                                onSubmit: (e) => {
+                                onSubmit: async (e) => {
                                     e.preventDefault();
                                     const formData = new FormData(e.target);
                                     const emailInput = formData.get('email');
@@ -174,12 +369,10 @@
                                             alert('Please enter your company name');
                                             return;
                                         }
+                                        await handleSignUp(emailInput, password, firstName, company);
+                                    } else {
+                                        await handleLogin(emailInput, password);
                                     }
-                                    
-                                    setEmployerFirstName(firstName || 'there');
-                                    setEmployerCompany(company || 'Your Company');
-                                    setIsEmployerLoggedIn(true);
-                                    setShowEmployerLogin(false);
                                 }
                             },
                                 isSignUp && React.createElement('div', null,
@@ -251,12 +444,8 @@
                                 )
                             ),
                             React.createElement('button', { 
-                                onClick: () => {
-                                    setEmployerFirstName('there');
-                                    setEmployerCompany('Your Company');
-                                    setIsEmployerLoggedIn(true);
-                                    setShowEmployerLogin(false);
-                                },
+                                onClick: handleGoogleSignIn,
+                                type: 'button',
                                 className: 'w-full bg-white border border-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-50 font-medium flex items-center justify-center gap-2'
                             },
                                 React.createElement('svg', { className: 'w-5 h-5', viewBox: '0 0 24 24' },
@@ -270,6 +459,7 @@
                             React.createElement('div', { className: 'mt-6 text-center text-sm' },
                                 React.createElement('button', { 
                                     onClick: () => setIsSignUp(!isSignUp),
+                                    type: 'button',
                                     className: 'text-indigo-600 hover:text-indigo-700 font-medium'
                                 }, isSignUp ? 'Already have an account? Log in' : "Don't have an account? Sign up")
                             )
@@ -278,7 +468,7 @@
                 );
             }
 
-            // Main job board (rest of the code continues...)
+            // Main job board
             return React.createElement('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100' },
                 React.createElement('header', { className: 'bg-white shadow-sm border-b' },
                     React.createElement('div', { className: 'max-w-7xl mx-auto px-4 py-4' },
@@ -375,8 +565,8 @@
                     !loading && !error && React.createElement('div', null,
                         featuredJobs.length > 0 && React.createElement('div', { className: 'mb-8' },
                             React.createElement('h2', { className: 'text-2xl font-bold mb-4' }, '⭐ Featured Jobs'),
-                            featuredJobs.map(job => 
-                                React.createElement('div', { key: job.id, className: 'bg-white rounded-lg shadow p-6 mb-4 border-2 border-yellow-400' },
+                            featuredJobs.map((job, index) => 
+                                React.createElement('div', { key: job.id || index, className: 'bg-white rounded-lg shadow p-6 mb-4 border-2 border-yellow-400' },
                                     React.createElement('div', { className: 'flex justify-between mb-4' },
                                         React.createElement('div', null,
                                             React.createElement('h3', { className: 'text-xl font-bold' }, job.title),
@@ -395,8 +585,8 @@
                         ),
                         regularJobs.length > 0 && React.createElement('div', null,
                             React.createElement('h2', { className: 'text-2xl font-bold mb-4' }, 'All Jobs'),
-                            regularJobs.map(job => 
-                                React.createElement('div', { key: job.id, className: 'bg-white rounded-lg shadow p-6 mb-4' },
+                            regularJobs.map((job, index) => 
+                                React.createElement('div', { key: job.id || index, className: 'bg-white rounded-lg shadow p-6 mb-4' },
                                     React.createElement('div', { className: 'flex justify-between mb-4' },
                                         React.createElement('div', null,
                                             React.createElement('h3', { className: 'text-xl font-bold' }, job.title),
