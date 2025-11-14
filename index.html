@@ -110,6 +110,21 @@
                 useEffect(() => {
                     fetchJobs();
                     
+                    // Check for payment success/cancel in URL
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const paymentStatus = urlParams.get('payment');
+                    
+                    if (paymentStatus === 'success') {
+                        alert('🎉 Payment successful! Your job listing is now featured for 30 days.');
+                        // Clean up URL
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        setShowDashboard(true); // Show dashboard to see the featured job
+                    } else if (paymentStatus === 'cancelled') {
+                        alert('Payment was cancelled. Your job listing remains as a standard listing.');
+                        // Clean up URL
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }
+                    
                     // Set up auth state listener
                     const { onAuthStateChanged } = window.firebaseAuthFunctions;
                     const { doc, getDoc } = window.firestoreFunctions;
@@ -310,6 +325,37 @@
                     }
                 };
 
+                const handlePromoteJob = async (job) => {
+                    try {
+                        console.log('Starting payment for job:', job.title);
+                        
+                        // Call our API to create a Stripe checkout session
+                        const response = await fetch('/api/create-checkout', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                jobId: job.id || job.title.replace(/\s+/g, '-').toLowerCase(),
+                                jobTitle: job.title,
+                                employerId: currentUser?.uid || 'unknown',
+                            }),
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('Failed to create checkout session');
+                        }
+
+                        const { url } = await response.json();
+                        
+                        // Redirect to Stripe Checkout
+                        window.location.href = url;
+                    } catch (error) {
+                        console.error('Payment error:', error);
+                        alert('Error starting payment: ' + error.message);
+                    }
+                };
+
                 // Employer Dashboard
                 if (isEmployerLoggedIn && showDashboard) {
                     const employerJobs = jobs.filter(job => job.company === employerCompany);
@@ -354,8 +400,8 @@
                                                 ),
                                                 React.createElement('p', { className: 'text-sm text-gray-500 mb-4' }, `${job.level} • ${job.location}`),
                                                 !job.isFeatured && React.createElement('button', { 
-                                                    className: 'bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600',
-                                                    onClick: () => alert('Payment integration coming soon with Stripe!')
+                                                    className: 'bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 transition-colors',
+                                                    onClick: () => handlePromoteJob(job)
                                                 }, '⭐ Promote This Job - $99')
                                             )
                                         )
