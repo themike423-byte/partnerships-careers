@@ -36,6 +36,7 @@
             const [email, setEmail] = useState('');
             const [isEmployerLoggedIn, setIsEmployerLoggedIn] = useState(false);
             const [employerCompany, setEmployerCompany] = useState('');
+            const [employerFirstName, setEmployerFirstName] = useState('');
 
             useEffect(() => {
                 fetchJobs();
@@ -84,6 +85,7 @@
                                     onClick: () => {
                                         setIsEmployerLoggedIn(false);
                                         setEmployerCompany('');
+                                        setEmployerFirstName('');
                                     },
                                     className: 'text-gray-600 hover:text-gray-900'
                                 }, 'View Job Board'),
@@ -91,6 +93,7 @@
                                     onClick: () => {
                                         setIsEmployerLoggedIn(false);
                                         setEmployerCompany('');
+                                        setEmployerFirstName('');
                                     },
                                     className: 'text-red-600 hover:text-red-700'
                                 }, 'Log Out')
@@ -99,7 +102,7 @@
                     ),
                     React.createElement('div', { className: 'max-w-7xl mx-auto px-4 py-8' },
                         React.createElement('div', { className: 'bg-white rounded-lg shadow p-6 mb-8' },
-                            React.createElement('h2', { className: 'text-2xl font-bold mb-2' }, `Welcome back, ${employerCompany}!`),
+                            React.createElement('h2', { className: 'text-2xl font-bold mb-2' }, `Welcome back, ${employerFirstName}!`),
                             React.createElement('p', { className: 'text-gray-600' }, 'Manage your job listings and promote them for better visibility')
                         ),
                         React.createElement('div', { className: 'bg-white rounded-lg shadow p-6' },
@@ -124,15 +127,6 @@
                                         )
                                     )
                                 )
-                        ),
-                        React.createElement('div', { className: 'bg-indigo-50 border border-indigo-200 rounded-lg p-6 mt-8' },
-                            React.createElement('h3', { className: 'font-bold text-indigo-900 mb-2' }, '🚀 Phase 2: Real Features Coming'),
-                            React.createElement('ul', { className: 'text-indigo-800 text-sm space-y-1' },
-                                React.createElement('li', null, '✓ Real authentication with Firebase'),
-                                React.createElement('li', null, '✓ Actual payment processing with Stripe'),
-                                React.createElement('li', null, '✓ Job management (add, edit, delete)'),
-                                React.createElement('li', null, '✓ Access to premium candidate profiles')
-                            )
                         )
                     )
                 );
@@ -161,8 +155,13 @@
                                     const password = formData.get('password');
                                     const confirmPassword = formData.get('confirmPassword');
                                     const company = formData.get('company');
+                                    const firstName = formData.get('firstName');
                                     
                                     if (isSignUp) {
+                                        if (!firstName || firstName.trim() === '') {
+                                            alert('Please enter your first name');
+                                            return;
+                                        }
                                         if (password.length < 8) {
                                             alert('Password must be at least 8 characters long');
                                             return;
@@ -177,11 +176,22 @@
                                         }
                                     }
                                     
+                                    setEmployerFirstName(firstName || 'there');
                                     setEmployerCompany(company || 'Your Company');
                                     setIsEmployerLoggedIn(true);
                                     setShowEmployerLogin(false);
                                 }
                             },
+                                isSignUp && React.createElement('div', null,
+                                    React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'First Name'),
+                                    React.createElement('input', { 
+                                        type: 'text',
+                                        name: 'firstName',
+                                        className: 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500',
+                                        placeholder: 'John',
+                                        required: true
+                                    })
+                                ),
                                 React.createElement('div', null,
                                     React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'Email Address'),
                                     React.createElement('input', { 
@@ -242,6 +252,7 @@
                             ),
                             React.createElement('button', { 
                                 onClick: () => {
+                                    setEmployerFirstName('there');
                                     setEmployerCompany('Your Company');
                                     setIsEmployerLoggedIn(true);
                                     setShowEmployerLogin(false);
