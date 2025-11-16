@@ -106,6 +106,16 @@
                 const [employerFirstName, setEmployerFirstName] = useState('');
                 const [currentUser, setCurrentUser] = useState(null);
                 const [authLoading, setAuthLoading] = useState(true);
+                const [showJobForm, setShowJobForm] = useState(false);
+                const [newJobData, setNewJobData] = useState({
+                    title: '',
+                    location: '',
+                    type: 'Full-Time',
+                    level: 'Manager',
+                    category: 'Ecosystem & Platform',
+                    description: '',
+                    link: ''
+                });
 
                 useEffect(() => {
                     fetchJobs();
@@ -113,15 +123,23 @@
                     // Check for payment success/cancel in URL
                     const urlParams = new URLSearchParams(window.location.search);
                     const paymentStatus = urlParams.get('payment');
+                    const paymentType = urlParams.get('type'); // 'new' or 'promote'
                     
                     if (paymentStatus === 'success') {
-                        alert('🎉 Payment successful! Your job listing is now featured for 30 days.');
+                        if (paymentType === 'new') {
+                            // Show job submission form for new job posting
+                            setShowJobForm(true);
+                            setShowDashboard(true);
+                            alert('🎉 Payment successful! Please fill out the form below to post your featured job.');
+                        } else {
+                            // Existing job promotion
+                            alert('🎉 Payment successful! Your job listing is now featured for 30 days.');
+                            setShowDashboard(true);
+                        }
                         // Clean up URL
                         window.history.replaceState({}, document.title, window.location.pathname);
-                        setShowDashboard(true); // Show dashboard to see the featured job
                     } else if (paymentStatus === 'cancelled') {
-                        alert('Payment was cancelled. Your job listing remains as a standard listing.');
-                        // Clean up URL
+                        alert('Payment was cancelled.');
                         window.history.replaceState({}, document.title, window.location.pathname);
                     }
                     
@@ -317,6 +335,7 @@
                         setEmployerCompany('');
                         setEmployerFirstName('');
                         setCurrentUser(null);
+                        setShowJobForm(false);
                         console.log('Logged out successfully');
                         alert('Logged out successfully');
                     } catch (error) {
@@ -336,6 +355,7 @@
                                 'Content-Type': 'application/json',
                             },
                             body: JSON.stringify({
+                                type: 'promote',
                                 jobId: job.id || job.title.replace(/\s+/g, '-').toLowerCase(),
                                 jobTitle: job.title,
                                 employerId: currentUser?.uid || 'unknown',
@@ -356,10 +376,250 @@
                     }
                 };
 
+                const handlePostNewJob = async () => {
+                    try {
+                        console.log('Starting payment for new job posting...');
+                        
+                        // Call our API to create a Stripe checkout session for new job
+                        const response = await fetch('/api/create-checkout', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                type: 'new',
+                                employerId: currentUser?.uid || 'unknown',
+                                company: employerCompany,
+                            }),
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('Failed to create checkout session');
+                        }
+
+                        const { url } = await response.json();
+                        
+                        // Redirect to Stripe Checkout
+                        window.location.href = url;
+                    } catch (error) {
+                        console.error('Payment error:', error);
+                        alert('Error starting payment: ' + error.message);
+                    }
+                };
+
+                const handleSubmitNewJob = async (e) => {
+                    e.preventDefault();
+                    
+                    // Validate form
+                    if (!newJobData.title || !newJobData.location || !newJobData.description || !newJobData.link) {
+                        alert('Please fill out all required fields');
+                        return;
+                    }
+
+                    try {
+                        console.log('Submitting new job to Sheety...');
+                        
+                        // Prepare job data for Sheety
+                        const jobToSubmit = {
+                            sheet1: {
+                                title: newJobData.title,
+                                company: employerCompany,
+                                location: newJobData.location,
+                                type: newJobData.type,
+                                salaryRange: 'Unspecified',
+                                level: newJobData.level,
+                                category: newJobData.category,
+                                description: newJobData.description,
+                                postedDate: new Date().toLocaleDateString('en-US'),
+                                isFeatured: true,
+                                employerId: currentUser?.uid || 'unknown',
+                                link: newJobData.link
+                            }
+                        };
+
+                        const response = await fetch(SHEETY_API, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify(jobToSubmit),
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('Failed to post job');
+                        }
+
+                        const result = await response.json();
+                        console.log('Job posted successfully:', result);
+
+                        alert('🎉 Your featured job has been posted successfully!');
+                        
+                        // Reset form and refresh jobs
+                        setShowJobForm(false);
+                        setNewJobData({
+                            title: '',
+                            location: '',
+                            type: 'Full-Time',
+                            level: 'Manager',
+                            category: 'Ecosystem & Platform',
+                            description: '',
+                            link: ''
+                        });
+                        fetchJobs();
+                    } catch (error) {
+                        console.error('Error posting job:', error);
+                        alert('Error posting job: ' + error.message);
+                    }
+                };
+
                 // Employer Dashboard
                 if (isEmployerLoggedIn && showDashboard) {
                     const employerJobs = jobs.filter(job => job.company === employerCompany);
                     
+                    // If showing job form after payment
+                    if (showJobForm) {
+                        return React.createElement('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100' },
+                            React.createElement('header', { className: 'bg-white shadow-sm border-b' },
+                                React.createElement('div', { className: 'max-w-7xl mx-auto px-4 py-4 flex justify-between items-center' },
+                                    React.createElement('h1', { className: 'text-xl font-bold' }, '👔 Post Featured Job'),
+                                    React.createElement('button', { 
+                                        onClick: () => setShowJobForm(false),
+                                        className: 'text-gray-600 hover:text-gray-900'
+                                    }, '← Back to Dashboard')
+                                )
+                            ),
+                            React.createElement('div', { className: 'max-w-3xl mx-auto px-4 py-8' },
+                                React.createElement('div', { className: 'bg-white rounded-lg shadow p-6 mb-4' },
+                                    React.createElement('h2', { className: 'text-2xl font-bold mb-2' }, 'Post Your Featured Job'),
+                                    React.createElement('p', { className: 'text-gray-600' }, 'Fill out the details below. Your job will be featured at the top of the job board for 30 days.')
+                                ),
+                                React.createElement('form', { 
+                                    onSubmit: handleSubmitNewJob,
+                                    className: 'bg-white rounded-lg shadow p-6 space-y-6'
+                                },
+                                    React.createElement('div', null,
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
+                                            'Job Title *'
+                                        ),
+                                        React.createElement('input', { 
+                                            type: 'text',
+                                            value: newJobData.title,
+                                            onChange: (e) => setNewJobData({...newJobData, title: e.target.value}),
+                                            className: 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500',
+                                            placeholder: 'e.g., Director of Channel Partnerships',
+                                            required: true
+                                        })
+                                    ),
+                                    React.createElement('div', null,
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
+                                            'Company'
+                                        ),
+                                        React.createElement('input', { 
+                                            type: 'text',
+                                            value: employerCompany,
+                                            disabled: true,
+                                            className: 'w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50',
+                                        })
+                                    ),
+                                    React.createElement('div', { className: 'grid grid-cols-2 gap-4' },
+                                        React.createElement('div', null,
+                                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
+                                                'Level *'
+                                            ),
+                                            React.createElement('select', { 
+                                                value: newJobData.level,
+                                                onChange: (e) => setNewJobData({...newJobData, level: e.target.value}),
+                                                className: 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500',
+                                                required: true
+                                            },
+                                                LEVELS.map(level => React.createElement('option', { key: level, value: level }, level))
+                                            )
+                                        ),
+                                        React.createElement('div', null,
+                                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
+                                                'Job Type *'
+                                            ),
+                                            React.createElement('select', { 
+                                                value: newJobData.type,
+                                                onChange: (e) => setNewJobData({...newJobData, type: e.target.value}),
+                                                className: 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500',
+                                                required: true
+                                            },
+                                                ['Full-Time', 'Part-Time', 'Contract', 'Remote'].map(type => 
+                                                    React.createElement('option', { key: type, value: type }, type)
+                                                )
+                                            )
+                                        )
+                                    ),
+                                    React.createElement('div', null,
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
+                                            'Category *'
+                                        ),
+                                        React.createElement('select', { 
+                                            value: newJobData.category,
+                                            onChange: (e) => setNewJobData({...newJobData, category: e.target.value}),
+                                            className: 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500',
+                                            required: true
+                                        },
+                                            CATEGORIES.map(cat => React.createElement('option', { key: cat, value: cat }, cat))
+                                        )
+                                    ),
+                                    React.createElement('div', null,
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
+                                            'Location *'
+                                        ),
+                                        React.createElement('input', { 
+                                            type: 'text',
+                                            value: newJobData.location,
+                                            onChange: (e) => setNewJobData({...newJobData, location: e.target.value}),
+                                            className: 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500',
+                                            placeholder: 'e.g., New York, NY or Remote',
+                                            required: true
+                                        })
+                                    ),
+                                    React.createElement('div', null,
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
+                                            'Job Description *'
+                                        ),
+                                        React.createElement('textarea', { 
+                                            value: newJobData.description,
+                                            onChange: (e) => setNewJobData({...newJobData, description: e.target.value}),
+                                            className: 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500',
+                                            rows: 6,
+                                            placeholder: 'Describe the role, responsibilities, and requirements...',
+                                            required: true
+                                        })
+                                    ),
+                                    React.createElement('div', null,
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
+                                            'Application Link *'
+                                        ),
+                                        React.createElement('input', { 
+                                            type: 'url',
+                                            value: newJobData.link,
+                                            onChange: (e) => setNewJobData({...newJobData, link: e.target.value}),
+                                            className: 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500',
+                                            placeholder: 'https://yourcompany.com/careers/job-id',
+                                            required: true
+                                        })
+                                    ),
+                                    React.createElement('div', { className: 'flex gap-4' },
+                                        React.createElement('button', { 
+                                            type: 'submit',
+                                            className: 'flex-1 bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 font-medium'
+                                        }, 'Post Featured Job'),
+                                        React.createElement('button', { 
+                                            type: 'button',
+                                            onClick: () => setShowJobForm(false),
+                                            className: 'px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50'
+                                        }, 'Cancel')
+                                    )
+                                )
+                            )
+                        );
+                    }
+                    
+                    // Regular dashboard view
                     return React.createElement('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100' },
                         React.createElement('header', { className: 'bg-white shadow-sm border-b' },
                             React.createElement('div', { className: 'max-w-7xl mx-auto px-4 py-4 flex justify-between items-center' },
@@ -379,14 +639,18 @@
                         React.createElement('div', { className: 'max-w-7xl mx-auto px-4 py-8' },
                             React.createElement('div', { className: 'bg-white rounded-lg shadow p-6 mb-8' },
                                 React.createElement('h2', { className: 'text-2xl font-bold mb-2' }, `Welcome back, ${employerFirstName}!`),
-                                React.createElement('p', { className: 'text-gray-600' }, 'Manage your job listings and promote them for better visibility')
+                                React.createElement('p', { className: 'text-gray-600 mb-4' }, 'Manage your job listings and promote them for better visibility'),
+                                React.createElement('button', { 
+                                    onClick: handlePostNewJob,
+                                    className: 'bg-yellow-500 text-white px-6 py-3 rounded-lg hover:bg-yellow-600 font-medium'
+                                }, '⭐ Post a Featured Job - $99')
                             ),
                             React.createElement('div', { className: 'bg-white rounded-lg shadow p-6' },
                                 React.createElement('h3', { className: 'text-xl font-bold mb-4' }, 'Your Job Listings'),
                                 employerJobs.length === 0 ? 
                                     React.createElement('div', { className: 'text-center py-12 text-gray-500' },
                                         React.createElement('p', { className: 'mb-2' }, `No job listings found for ${employerCompany}.`),
-                                        React.createElement('p', { className: 'text-sm' }, 'Jobs from your company will appear here once added to the database.')
+                                        React.createElement('p', { className: 'text-sm' }, 'Click "Post a Featured Job" above to add your first listing!')
                                     ) :
                                     React.createElement('div', { className: 'space-y-4' },
                                         employerJobs.map((job, index) => 
@@ -411,7 +675,7 @@
                     );
                 }
                 
-                // Employer Login/Signup page
+                // Employer Login/Signup page (unchanged)
                 if (showEmployerLogin) {
                     return React.createElement('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4' },
                         React.createElement('div', { className: 'max-w-md w-full' },
@@ -552,7 +816,7 @@
                     );
                 }
 
-                // Main job board
+                // Main job board (rest unchanged)
                 return React.createElement('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100' },
                     React.createElement('header', { className: 'bg-white shadow-sm border-b' },
                         React.createElement('div', { className: 'max-w-7xl mx-auto px-4 py-4' },
@@ -641,7 +905,7 @@
                                 )
                             ),
                             React.createElement('div', null,
-                                React.createElement('h3', { className: 'text-sm font-bold mb-3' }, 'FILTER BY PARTNERSHIP TYPE'),
+                                React.createElement('h3', { className: 'text-sm font-medium mb-3' }, 'FILTER BY PARTNERSHIP TYPE'),
                                 React.createElement('div', { className: 'flex flex-wrap gap-3' },
                                     React.createElement('button', {
                                         onClick: () => setSelectedCategory('All'),
