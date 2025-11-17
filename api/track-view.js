@@ -16,16 +16,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { jobId, location } = req.body;
+    const { jobId } = req.body;
     
     if (!jobId) {
       return res.status(400).json({ error: 'Missing jobId' });
     }
 
     const SHEETY_API = 'https://api.sheety.co/4ce55d1d0ad684ea192b042bd2f3b53d/partnershipsCareersDb';
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
 
-    // 1. Update total views in jobs table
+    // 1. Update total views in jobs table (sheet1)
     const jobsResponse = await fetch(`${SHEETY_API}/sheet1`);
     const jobsData = await jobsResponse.json();
     const job = jobsData.sheet1.find(j => j.id === parseInt(jobId));
@@ -42,9 +42,11 @@ export default async function handler(req, res) {
           }
         })
       });
+      
+      console.log(`✅ Updated job ${jobId} totalViews to ${updatedViews}`);
     }
 
-    // 2. Record in analytics table
+    // 2. Update analytics table (daily tracking)
     const analyticsResponse = await fetch(`${SHEETY_API}/analytics`);
     const analyticsData = await analyticsResponse.json();
     const todayRecord = analyticsData.analytics?.find(
@@ -52,18 +54,20 @@ export default async function handler(req, res) {
     );
 
     if (todayRecord) {
-      // Update existing record
+      // Update existing record for today
+      const updatedViews = (todayRecord.views || 0) + 1;
       await fetch(`${SHEETY_API}/analytics/${todayRecord.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           analytics: {
-            views: (todayRecord.views || 0) + 1
+            views: updatedViews
           }
         })
       });
+      console.log(`✅ Updated analytics record for job ${jobId} on ${today}, views: ${updatedViews}`);
     } else {
-      // Create new record
+      // Create new record for today
       await fetch(`${SHEETY_API}/analytics`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -72,17 +76,17 @@ export default async function handler(req, res) {
             jobId: parseInt(jobId),
             date: today,
             views: 1,
-            clicks: 0,
-            viewerLocation: location || 'Unknown'
+            clicks: 0
           }
         })
       });
+      console.log(`✅ Created new analytics record for job ${jobId} on ${today}`);
     }
 
     res.status(200).json({ success: true });
     
   } catch (error) {
-    console.error('Error tracking view:', error);
+    console.error('❌ Error tracking view:', error);
     res.status(500).json({ error: error.message });
   }
 }
