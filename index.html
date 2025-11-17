@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Partnerships Careers - Find Your Next Partnership Role</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
     <div id="root"></div>
@@ -91,6 +92,53 @@
               'Corporate Development & Venture Partnerships'
             ];
 
+            // Utility Functions
+            const trackJobView = async (jobId) => {
+                try {
+                    await fetch('/api/track-view', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ jobId: jobId })
+                    });
+                } catch (error) {
+                    console.error('Error tracking view:', error);
+                }
+            };
+
+            const trackJobClick = async (jobId, jobUrl) => {
+                try {
+                    await fetch('/api/track-click', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ jobId: jobId })
+                    });
+                    setTimeout(() => {
+                        window.open(jobUrl, '_blank');
+                    }, 100);
+                } catch (error) {
+                    console.error('Error tracking click:', error);
+                    window.open(jobUrl, '_blank');
+                }
+            };
+
+            const calculateDaysRemaining = (expiryDateString) => {
+                if (!expiryDateString) return null;
+                try {
+                    const expiry = new Date(expiryDateString);
+                    const today = new Date();
+                    const diffTime = expiry - today;
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    return diffDays > 0 ? diffDays : 0;
+                } catch (error) {
+                    return null;
+                }
+            };
+
+            const calculateCTR = (clicks, views) => {
+                if (!views || views === 0) return '0.0';
+                return ((clicks / views) * 100).toFixed(1);
+            };
+
             function App() {
                 const [jobs, setJobs] = useState([]);
                 const [selectedLevel, setSelectedLevel] = useState('All');
@@ -123,20 +171,17 @@
                     // Check for payment success/cancel in URL
                     const urlParams = new URLSearchParams(window.location.search);
                     const paymentStatus = urlParams.get('payment');
-                    const paymentType = urlParams.get('type'); // 'new' or 'promote'
+                    const paymentType = urlParams.get('type');
                     
                     if (paymentStatus === 'success') {
                         if (paymentType === 'new') {
-                            // Show job submission form for new job posting
                             setShowJobForm(true);
                             setShowDashboard(true);
                             alert('🎉 Payment successful! Please fill out the form below to post your featured job.');
                         } else {
-                            // Existing job promotion
                             alert('🎉 Payment successful! Your job listing is now featured for 30 days.');
                             setShowDashboard(true);
                         }
-                        // Clean up URL
                         window.history.replaceState({}, document.title, window.location.pathname);
                     } else if (paymentStatus === 'cancelled') {
                         alert('Payment was cancelled.');
@@ -147,28 +192,16 @@
                     const { onAuthStateChanged } = window.firebaseAuthFunctions;
                     const { doc, getDoc } = window.firestoreFunctions;
                     
-                    console.log('Setting up auth state listener...');
-                    
                     const unsubscribe = onAuthStateChanged(window.firebaseAuth, async (user) => {
-                        console.log('Auth state changed:', user ? 'User logged in' : 'No user');
-                        
                         if (user) {
                             setCurrentUser(user);
-                            console.log('User ID:', user.uid);
-                            
-                            // Fetch user data from Firestore
                             try {
-                                console.log('Fetching user data from Firestore...');
                                 const userDoc = await getDoc(doc(window.firebaseDb, 'employers', user.uid));
-                                
                                 if (userDoc.exists()) {
                                     const userData = userDoc.data();
-                                    console.log('User data found:', userData);
                                     setEmployerFirstName(userData.firstName || 'there');
                                     setEmployerCompany(userData.company || 'Your Company');
                                     setIsEmployerLoggedIn(true);
-                                } else {
-                                    console.log('No user document found in Firestore');
                                 }
                             } catch (err) {
                                 console.error('Error fetching user data:', err);
@@ -193,7 +226,9 @@
                         const jobsArray = data.sheet1 || [];
                         setJobs(jobsArray.map(job => ({
                             ...job,
-                            isFeatured: job.isFeatured === true
+                            isFeatured: job.isFeatured === true,
+                            totalViews: job.totalViews || 0,
+                            totalClicks: job.totalClicks || 0
                         })));
                     } catch (err) {
                         setError('Error loading jobs');
@@ -215,24 +250,18 @@
 
                 const handleSignUp = async (email, password, firstName, company) => {
                     try {
-                        console.log('Starting sign up process...');
                         const { createUserWithEmailAndPassword } = window.firebaseAuthFunctions;
                         const { doc, setDoc } = window.firestoreFunctions;
                         
-                        console.log('Creating user with email:', email);
                         const userCredential = await createUserWithEmailAndPassword(window.firebaseAuth, email, password);
                         const user = userCredential.user;
-                        console.log('User created successfully! UID:', user.uid);
                         
-                        // Store user data in Firestore
-                        console.log('Saving user data to Firestore...');
                         await setDoc(doc(window.firebaseDb, 'employers', user.uid), {
                             email: email,
                             firstName: firstName,
                             company: company,
                             createdAt: new Date().toISOString()
                         });
-                        console.log('User data saved to Firestore successfully!');
                         
                         setEmployerFirstName(firstName);
                         setEmployerCompany(company);
@@ -248,19 +277,15 @@
 
                 const handleLogin = async (email, password) => {
                     try {
-                        console.log('Starting login process...');
                         const { signInWithEmailAndPassword } = window.firebaseAuthFunctions;
                         const { doc, getDoc } = window.firestoreFunctions;
                         
                         const userCredential = await signInWithEmailAndPassword(window.firebaseAuth, email, password);
                         const user = userCredential.user;
-                        console.log('Login successful! UID:', user.uid);
                         
-                        // Fetch user data from Firestore
                         const userDoc = await getDoc(doc(window.firebaseDb, 'employers', user.uid));
                         if (userDoc.exists()) {
                             const userData = userDoc.data();
-                            console.log('User data retrieved:', userData);
                             setEmployerFirstName(userData.firstName || 'there');
                             setEmployerCompany(userData.company || 'Your Company');
                         }
@@ -277,19 +302,15 @@
 
                 const handleGoogleSignIn = async () => {
                     try {
-                        console.log('Starting Google sign in...');
                         const { signInWithPopup } = window.firebaseAuthFunctions;
                         const { doc, setDoc, getDoc } = window.firestoreFunctions;
                         
                         const result = await signInWithPopup(window.firebaseAuth, window.googleProvider);
                         const user = result.user;
-                        console.log('Google sign in successful! UID:', user.uid);
                         
-                        // Check if user data exists
                         const userDoc = await getDoc(doc(window.firebaseDb, 'employers', user.uid));
                         
                         if (!userDoc.exists()) {
-                            console.log('First time Google user, asking for company name...');
                             const company = prompt('Please enter your company name:');
                             if (!company) {
                                 alert('Company name is required');
@@ -299,20 +320,17 @@
                             
                             const firstName = user.displayName ? user.displayName.split(' ')[0] : 'there';
                             
-                            console.log('Saving new Google user data...');
                             await setDoc(doc(window.firebaseDb, 'employers', user.uid), {
                                 email: user.email,
                                 firstName: firstName,
                                 company: company,
                                 createdAt: new Date().toISOString()
                             });
-                            console.log('Google user data saved!');
                             
                             setEmployerFirstName(firstName);
                             setEmployerCompany(company);
                         } else {
                             const userData = userDoc.data();
-                            console.log('Existing Google user data:', userData);
                             setEmployerFirstName(userData.firstName || 'there');
                             setEmployerCompany(userData.company || 'Your Company');
                         }
@@ -328,7 +346,6 @@
 
                 const handleLogout = async () => {
                     try {
-                        console.log('Logging out...');
                         const { signOut } = window.firebaseAuthFunctions;
                         await signOut(window.firebaseAuth);
                         setIsEmployerLoggedIn(false);
@@ -336,7 +353,6 @@
                         setEmployerFirstName('');
                         setCurrentUser(null);
                         setShowJobForm(false);
-                        console.log('Logged out successfully');
                         alert('Logged out successfully');
                     } catch (error) {
                         console.error('Logout error:', error);
@@ -346,14 +362,9 @@
 
                 const handlePromoteJob = async (job) => {
                     try {
-                        console.log('Starting payment for job:', job.title);
-                        
-                        // Call our API to create a Stripe checkout session
                         const response = await fetch('/api/create-checkout', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
+                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 type: 'promote',
                                 jobId: job.id || job.title.replace(/\s+/g, '-').toLowerCase(),
@@ -362,13 +373,8 @@
                             }),
                         });
 
-                        if (!response.ok) {
-                            throw new Error('Failed to create checkout session');
-                        }
-
+                        if (!response.ok) throw new Error('Failed to create checkout session');
                         const { url } = await response.json();
-                        
-                        // Redirect to Stripe Checkout
                         window.location.href = url;
                     } catch (error) {
                         console.error('Payment error:', error);
@@ -378,14 +384,9 @@
 
                 const handlePostNewJob = async () => {
                     try {
-                        console.log('Starting payment for new job posting...');
-                        
-                        // Call our API to create a Stripe checkout session for new job
                         const response = await fetch('/api/create-checkout', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
+                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 type: 'new',
                                 employerId: currentUser?.uid || 'unknown',
@@ -393,13 +394,8 @@
                             }),
                         });
 
-                        if (!response.ok) {
-                            throw new Error('Failed to create checkout session');
-                        }
-
+                        if (!response.ok) throw new Error('Failed to create checkout session');
                         const { url } = await response.json();
-                        
-                        // Redirect to Stripe Checkout
                         window.location.href = url;
                     } catch (error) {
                         console.error('Payment error:', error);
@@ -410,16 +406,17 @@
                 const handleSubmitNewJob = async (e) => {
                     e.preventDefault();
                     
-                    // Validate form
                     if (!newJobData.title || !newJobData.location || !newJobData.description || !newJobData.link) {
                         alert('Please fill out all required fields');
                         return;
                     }
 
                     try {
-                        console.log('Submitting new job to Sheety...');
+                        // Calculate featured expiry date (30 days from now)
+                        const expiryDate = new Date();
+                        expiryDate.setDate(expiryDate.getDate() + 30);
+                        const formattedExpiry = `${expiryDate.getMonth() + 1}/${expiryDate.getDate()}/${expiryDate.getFullYear()}`;
                         
-                        // Prepare job data for Sheety
                         const jobToSubmit = {
                             sheet1: {
                                 title: newJobData.title,
@@ -433,28 +430,24 @@
                                 postedDate: new Date().toLocaleDateString('en-US'),
                                 isFeatured: true,
                                 employerId: currentUser?.uid || 'unknown',
-                                link: newJobData.link
+                                link: newJobData.link,
+                                featuredExpiryDate: formattedExpiry,
+                                totalViews: 0,
+                                totalClicks: 0,
+                                status: 'active'
                             }
                         };
 
                         const response = await fetch(SHEETY_API, {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
+                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(jobToSubmit),
                         });
 
-                        if (!response.ok) {
-                            throw new Error('Failed to post job');
-                        }
-
-                        const result = await response.json();
-                        console.log('Job posted successfully:', result);
+                        if (!response.ok) throw new Error('Failed to post job');
 
                         alert('🎉 Your featured job has been posted successfully!');
                         
-                        // Reset form and refresh jobs
                         setShowJobForm(false);
                         setNewJobData({
                             title: '',
@@ -472,9 +465,24 @@
                     }
                 };
 
-                // Employer Dashboard
+                // Track views when jobs are displayed
+                useEffect(() => {
+                    featuredJobs.forEach(job => {
+                        if (job.id) trackJobView(job.id);
+                    });
+                    regularJobs.forEach(job => {
+                        if (job.id) trackJobView(job.id);
+                    });
+                }, [featuredJobs, regularJobs]);
+
+                // ENHANCED EMPLOYER DASHBOARD
                 if (isEmployerLoggedIn && showDashboard) {
                     const employerJobs = jobs.filter(job => job.company === employerCompany);
+                    
+                    // Calculate aggregate stats
+                    const totalViews = employerJobs.reduce((sum, job) => sum + (job.totalViews || 0), 0);
+                    const totalClicks = employerJobs.reduce((sum, job) => sum + (job.totalClicks || 0), 0);
+                    const avgCTR = totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(1) : '0.0';
                     
                     // If showing job form after payment
                     if (showJobForm) {
@@ -498,9 +506,7 @@
                                     className: 'bg-white rounded-lg shadow p-6 space-y-6'
                                 },
                                     React.createElement('div', null,
-                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
-                                            'Job Title *'
-                                        ),
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'Job Title *'),
                                         React.createElement('input', { 
                                             type: 'text',
                                             value: newJobData.title,
@@ -511,9 +517,7 @@
                                         })
                                     ),
                                     React.createElement('div', null,
-                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
-                                            'Company'
-                                        ),
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'Company'),
                                         React.createElement('input', { 
                                             type: 'text',
                                             value: employerCompany,
@@ -523,9 +527,7 @@
                                     ),
                                     React.createElement('div', { className: 'grid grid-cols-2 gap-4' },
                                         React.createElement('div', null,
-                                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
-                                                'Level *'
-                                            ),
+                                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'Level *'),
                                             React.createElement('select', { 
                                                 value: newJobData.level,
                                                 onChange: (e) => setNewJobData({...newJobData, level: e.target.value}),
@@ -536,9 +538,7 @@
                                             )
                                         ),
                                         React.createElement('div', null,
-                                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
-                                                'Job Type *'
-                                            ),
+                                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'Job Type *'),
                                             React.createElement('select', { 
                                                 value: newJobData.type,
                                                 onChange: (e) => setNewJobData({...newJobData, type: e.target.value}),
@@ -552,9 +552,7 @@
                                         )
                                     ),
                                     React.createElement('div', null,
-                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
-                                            'Category *'
-                                        ),
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'Category *'),
                                         React.createElement('select', { 
                                             value: newJobData.category,
                                             onChange: (e) => setNewJobData({...newJobData, category: e.target.value}),
@@ -565,9 +563,7 @@
                                         )
                                     ),
                                     React.createElement('div', null,
-                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
-                                            'Location *'
-                                        ),
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'Location *'),
                                         React.createElement('input', { 
                                             type: 'text',
                                             value: newJobData.location,
@@ -578,9 +574,7 @@
                                         })
                                     ),
                                     React.createElement('div', null,
-                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
-                                            'Job Description *'
-                                        ),
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'Job Description *'),
                                         React.createElement('textarea', { 
                                             value: newJobData.description,
                                             onChange: (e) => setNewJobData({...newJobData, description: e.target.value}),
@@ -591,9 +585,7 @@
                                         })
                                     ),
                                     React.createElement('div', null,
-                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
-                                            'Application Link *'
-                                        ),
+                                        React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'Application Link *'),
                                         React.createElement('input', { 
                                             type: 'url',
                                             value: newJobData.link,
@@ -619,7 +611,7 @@
                         );
                     }
                     
-                    // Regular dashboard view
+                    // Regular dashboard view WITH ANALYTICS
                     return React.createElement('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100' },
                         React.createElement('header', { className: 'bg-white shadow-sm border-b' },
                             React.createElement('div', { className: 'max-w-7xl mx-auto px-4 py-4 flex justify-between items-center' },
@@ -637,14 +629,47 @@
                             )
                         ),
                         React.createElement('div', { className: 'max-w-7xl mx-auto px-4 py-8' },
-                            React.createElement('div', { className: 'bg-white rounded-lg shadow p-6 mb-8' },
+                            // Welcome Section
+                            React.createElement('div', { className: 'bg-white rounded-lg shadow p-6 mb-6' },
                                 React.createElement('h2', { className: 'text-2xl font-bold mb-2' }, `Welcome back, ${employerFirstName}!`),
-                                React.createElement('p', { className: 'text-gray-600 mb-4' }, 'Manage your job listings and promote them for better visibility'),
+                                React.createElement('p', { className: 'text-gray-600 mb-4' }, 'Manage your job listings and track their performance'),
                                 React.createElement('button', { 
                                     onClick: handlePostNewJob,
                                     className: 'bg-yellow-500 text-white px-6 py-3 rounded-lg hover:bg-yellow-600 font-medium'
                                 }, '⭐ Post a Featured Job - $99')
                             ),
+                            
+                            // Analytics Overview Cards
+                            employerJobs.length > 0 && React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-6 mb-6' },
+                                React.createElement('div', { className: 'bg-white rounded-lg shadow p-6' },
+                                    React.createElement('div', { className: 'flex items-center justify-between mb-2' },
+                                        React.createElement('span', { className: 'text-gray-600 text-sm font-medium' }, 'Total Views'),
+                                        React.createElement('span', { className: 'text-2xl' }, '👁️')
+                                    ),
+                                    React.createElement('p', { className: 'text-3xl font-bold text-indigo-600' }, totalViews.toLocaleString()),
+                                    React.createElement('p', { className: 'text-xs text-gray-500 mt-1' }, 'Across all your listings')
+                                ),
+                                React.createElement('div', { className: 'bg-white rounded-lg shadow p-6' },
+                                    React.createElement('div', { className: 'flex items-center justify-between mb-2' },
+                                        React.createElement('span', { className: 'text-gray-600 text-sm font-medium' }, 'Total Clicks'),
+                                        React.createElement('span', { className: 'text-2xl' }, '🖱️')
+                                    ),
+                                    React.createElement('p', { className: 'text-3xl font-bold text-green-600' }, totalClicks.toLocaleString()),
+                                    React.createElement('p', { className: 'text-xs text-gray-500 mt-1' }, 'Apply Now button clicks')
+                                ),
+                                React.createElement('div', { className: 'bg-white rounded-lg shadow p-6' },
+                                    React.createElement('div', { className: 'flex items-center justify-between mb-2' },
+                                        React.createElement('span', { className: 'text-gray-600 text-sm font-medium' }, 'Avg Click Rate'),
+                                        React.createElement('span', { className: 'text-2xl' }, '📈')
+                                    ),
+                                    React.createElement('p', { className: 'text-3xl font-bold text-purple-600' }, `${avgCTR}%`),
+                                    React.createElement('p', { className: 'text-xs text-gray-500 mt-1' }, 
+                                        avgCTR >= 5 ? 'Great performance! 🎉' : 'Room for improvement'
+                                    )
+                                )
+                            ),
+                            
+                            // Your Job Listings Section
                             React.createElement('div', { className: 'bg-white rounded-lg shadow p-6' },
                                 React.createElement('h3', { className: 'text-xl font-bold mb-4' }, 'Your Job Listings'),
                                 employerJobs.length === 0 ? 
@@ -653,29 +678,92 @@
                                         React.createElement('p', { className: 'text-sm' }, 'Click "Post a Featured Job" above to add your first listing!')
                                     ) :
                                     React.createElement('div', { className: 'space-y-4' },
-                                        employerJobs.map((job, index) => 
-                                            React.createElement('div', { 
+                                        employerJobs.map((job, index) => {
+                                            const daysRemaining = calculateDaysRemaining(job.featuredExpiryDate);
+                                            const jobCTR = calculateCTR(job.totalClicks || 0, job.totalViews || 0);
+                                            const isActive = job.status === 'active' || !job.status;
+                                            
+                                            return React.createElement('div', { 
                                                 key: job.id || index,
-                                                className: 'border rounded-lg p-4'
+                                                className: `border rounded-lg p-6 ${!isActive ? 'opacity-60 bg-gray-50' : ''}`
                                             },
-                                                React.createElement('h4', { className: 'font-bold mb-2' }, job.title),
-                                                React.createElement('p', { className: 'text-sm text-gray-600 mb-2' }, 
-                                                    job.isFeatured ? '⭐ Featured' : 'Standard Listing'
+                                                // Job Header
+                                                React.createElement('div', { className: 'flex justify-between items-start mb-4' },
+                                                    React.createElement('div', { className: 'flex-1' },
+                                                        React.createElement('h4', { className: 'font-bold text-lg mb-1' }, job.title),
+                                                        React.createElement('div', { className: 'flex items-center gap-3 text-sm text-gray-600' },
+                                                            job.isFeatured && React.createElement('span', { className: 'text-yellow-600 font-medium' }, '⭐ Featured'),
+                                                            React.createElement('span', null, job.level),
+                                                            React.createElement('span', null, '•'),
+                                                            React.createElement('span', null, job.location),
+                                                            !isActive && React.createElement('span', { className: 'text-red-600 font-medium' }, '• Paused')
+                                                        ),
+                                                        job.isFeatured && daysRemaining !== null && React.createElement('p', { className: 'text-xs text-gray-500 mt-1' },
+                                                            daysRemaining > 0 ? 
+                                                                `${daysRemaining} days remaining in featured period` :
+                                                                'Featured period expired'
+                                                        )
+                                                    ),
+                                                    React.createElement('div', { className: 'text-right' },
+                                                        React.createElement('span', { 
+                                                            className: `inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                                                                jobCTR >= 5 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                                                            }`
+                                                        }, `${jobCTR}% CTR`)
+                                                    )
                                                 ),
-                                                React.createElement('p', { className: 'text-sm text-gray-500 mb-4' }, `${job.level} • ${job.location}`),
-                                                !job.isFeatured && React.createElement('button', { 
-                                                    className: 'bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 transition-colors',
-                                                    onClick: () => handlePromoteJob(job)
-                                                }, '⭐ Promote This Job - $99')
-                                            )
-                                        )
+                                                
+                                                // Analytics Stats
+                                                React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 p-4 bg-gray-50 rounded-lg' },
+                                                    React.createElement('div', null,
+                                                        React.createElement('p', { className: 'text-xs text-gray-600 mb-1' }, 'Views'),
+                                                        React.createElement('p', { className: 'text-xl font-bold text-indigo-600' }, (job.totalViews || 0).toLocaleString())
+                                                    ),
+                                                    React.createElement('div', null,
+                                                        React.createElement('p', { className: 'text-xs text-gray-600 mb-1' }, 'Clicks'),
+                                                        React.createElement('p', { className: 'text-xl font-bold text-green-600' }, (job.totalClicks || 0).toLocaleString())
+                                                    ),
+                                                    React.createElement('div', null,
+                                                        React.createElement('p', { className: 'text-xs text-gray-600 mb-1' }, 'Cost/View'),
+                                                        React.createElement('p', { className: 'text-xl font-bold text-purple-600' }, 
+                                                            job.totalViews > 0 ? `$${(99 / job.totalViews).toFixed(2)}` : '$0.00'
+                                                        )
+                                                    ),
+                                                    React.createElement('div', null,
+                                                        React.createElement('p', { className: 'text-xs text-gray-600 mb-1' }, 'Cost/Click'),
+                                                        React.createElement('p', { className: 'text-xl font-bold text-orange-600' }, 
+                                                            job.totalClicks > 0 ? `$${(99 / job.totalClicks).toFixed(2)}` : '$0.00'
+                                                        )
+                                                    )
+                                                ),
+                                                
+                                                // Action Buttons
+                                                React.createElement('div', { className: 'flex flex-wrap gap-3' },
+                                                    React.createElement('a', {
+                                                        href: job.link,
+                                                        target: '_blank',
+                                                        className: 'text-sm text-indigo-600 hover:text-indigo-700 font-medium'
+                                                    }, 'View Listing →'),
+                                                    
+                                                    !job.isFeatured && React.createElement('button', { 
+                                                        className: 'text-sm bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 transition-colors',
+                                                        onClick: () => handlePromoteJob(job)
+                                                    }, '⭐ Promote to Featured - $99'),
+                                                    
+                                                    job.isFeatured && daysRemaining !== null && daysRemaining < 7 && React.createElement('button', { 
+                                                        className: 'text-sm bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 transition-colors',
+                                                        onClick: () => handlePromoteJob(job)
+                                                    }, '🔄 Extend Featured - $99')
+                                                )
+                                            );
+                                        })
                                     )
                             )
                         )
                     );
                 }
                 
-                // Employer Login/Signup page (unchanged)
+                // Employer Login/Signup page
                 if (showEmployerLogin) {
                     return React.createElement('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4' },
                         React.createElement('div', { className: 'max-w-md w-full' },
@@ -816,7 +904,7 @@
                     );
                 }
 
-                // Main job board (rest unchanged)
+                // Main job board
                 return React.createElement('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100' },
                     React.createElement('header', { className: 'bg-white shadow-sm border-b' },
                         React.createElement('div', { className: 'max-w-7xl mx-auto px-4 py-4' },
@@ -945,7 +1033,10 @@
                                             React.createElement('span', null, '📍 ' + job.location),
                                             job.type && React.createElement('span', null, '💼 ' + job.type)
                                         ),
-                                        React.createElement('a', { href: job.link, target: '_blank', className: 'bg-indigo-600 text-white px-6 py-2 rounded-lg inline-block' }, 'Apply Now')
+                                        React.createElement('button', { 
+                                            onClick: () => trackJobClick(job.id, job.link),
+                                            className: 'bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 cursor-pointer'
+                                        }, 'Apply Now')
                                     )
                                 )
                             ),
@@ -965,7 +1056,10 @@
                                             React.createElement('span', null, '📍 ' + job.location),
                                             job.type && React.createElement('span', null, '💼 ' + job.type)
                                         ),
-                                        React.createElement('a', { href: job.link, target: '_blank', className: 'bg-indigo-600 text-white px-6 py-2 rounded-lg inline-block' }, 'Apply Now')
+                                        React.createElement('button', { 
+                                            onClick: () => trackJobClick(job.id, job.link),
+                                            className: 'bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 cursor-pointer'
+                                        }, 'Apply Now')
                                     )
                                 )
                             ),
