@@ -866,6 +866,23 @@ function App() {
                             const members = allMembersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                             setCompanyMembers(members);
                             
+                            // Fetch pending access requests if user is admin
+                            if (userIsAdmin || isWhitelistedAdmin(user.email)) {
+                                try {
+                                    const accessRequestsRef = collection(db, 'accessRequests');
+                                    const pendingRequestsQuery = query(
+                                        accessRequestsRef,
+                                        where('companyId', '==', companyId),
+                                        where('status', '==', 'pending')
+                                    );
+                                    const pendingRequestsSnapshot = await getDocs(pendingRequestsQuery);
+                                    const requests = pendingRequestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                    setPendingAccessRequests(requests);
+                                } catch (requestsError) {
+                                    console.error('Error fetching access requests:', requestsError);
+                                }
+                            }
+                            
                             // Dashboard already shown above, just update company data
                             console.log('✅ Successfully loaded company data for existing user');
                             console.log('📊 Dashboard state - isEmployerLoggedIn:', true, 'showDashboard:', true);
@@ -1030,6 +1047,23 @@ function App() {
                             const allMembersSnapshot = await getDocs(allMembersQuery);
                             const members = allMembersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                             setCompanyMembers(members);
+                            
+                            // Fetch pending access requests if user is admin (for new companies, admin is true)
+                            if (isAdmin || isWhitelistedAdmin(user.email)) {
+                                try {
+                                    const accessRequestsRef = collection(db, 'accessRequests');
+                                    const pendingRequestsQuery = query(
+                                        accessRequestsRef,
+                                        where('companyId', '==', companyId),
+                                        where('status', '==', 'pending')
+                                    );
+                                    const pendingRequestsSnapshot = await getDocs(pendingRequestsQuery);
+                                    const requests = pendingRequestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                    setPendingAccessRequests(requests);
+                                } catch (requestsError) {
+                                    console.error('Error fetching access requests:', requestsError);
+                                }
+                            }
                             
                             // Dashboard already shown above, just confirm state
                             console.log('✅ Successfully created company and logged in');
@@ -1512,20 +1546,84 @@ Questions? support@partnerships-careers.com`;
                         setLinkedinUserData(userData);
                         setExistingCompanyInfo(existingCompany);
                         setShowRequestAccessModal(true);
+                        setShowEmployerLogin(false);
                         window.history.replaceState({}, document.title, window.location.pathname);
                         setLinkedinAuthLoading(false);
                         return;
                     }
                     
                     // Company doesn't exist - create new account
-                    // Store LinkedIn data for account creation
-                    setLinkedinUserData(userData);
-                    
-                    // Continue with account creation flow (will be implemented)
-                    // For now, show success message
-                    alert('LinkedIn verification successful! Account creation flow will continue...');
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                    setLinkedinAuthLoading(false);
+                    // Create Firebase account with LinkedIn email
+                    try {
+                        // Generate a random password (user won't need to know it)
+                        const tempPassword = Math.random().toString(36).slice(-16) + 'A1!';
+                        
+                        // Create Firebase account
+                        const userCredential = await createUserWithEmailAndPassword(auth, userData.email, tempPassword);
+                        const firebaseUser = userCredential.user;
+                        
+                        // Extract company name from email domain or use placeholder
+                        const companyName = extractCompanyFromEmail(userData.email) || userData.company || 'Your Company';
+                        
+                        // Create company account
+                        const companiesRef = collection(db, 'companies');
+                        const companyDoc = await addDoc(companiesRef, {
+                            name: companyName,
+                            emailDomain: emailDomain,
+                            claimedAt: new Date().toISOString(),
+                            claimedBy: firebaseUser.uid,
+                            website: '',
+                            createdAt: new Date().toISOString(),
+                        });
+                        
+                        // Save user profile with LinkedIn data
+                        const userProfileRef = doc(db, 'users', firebaseUser.uid);
+                        await setDoc(userProfileRef, {
+                            email: userData.email.toLowerCase(),
+                            firstName: userData.firstName,
+                            lastName: userData.lastName || '',
+                            company: companyName,
+                            linkedinId: userData.linkedinId,
+                            linkedinProfileUrl: userData.profileUrl,
+                            linkedinJobTitle: userData.jobTitle,
+                            linkedinProfilePicture: userData.profilePicture || '',
+                            createdAt: new Date().toISOString(),
+                            role: 'employer',
+                            companyId: companyDoc.id,
+                            isAdmin: true, // First user becomes admin
+                        });
+                        
+                        // Add user to company members
+                        const membersRef = collection(db, 'companyMembers');
+                        await addDoc(membersRef, {
+                            companyId: companyDoc.id,
+                            userId: firebaseUser.uid,
+                            email: userData.email.toLowerCase(),
+                            firstName: userData.firstName,
+                            lastName: userData.lastName || '',
+                            isAdmin: true,
+                            joinedAt: new Date().toISOString(),
+                        });
+                        
+                        alert('🎉 Account created successfully! You are now logged in as the company admin.');
+                        setShowEmployerLogin(false);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        setLinkedinAuthLoading(false);
+                        
+                        // Refresh auth state to log them in
+                        // The onAuthStateChanged will handle the rest
+                    } catch (accountError) {
+                        console.error('Error creating account:', accountError);
+                        let errorMessage = 'Error creating account: ';
+                        if (accountError.code === 'auth/email-already-in-use') {
+                            errorMessage += 'This email is already registered. Please log in instead.';
+                        } else {
+                            errorMessage += accountError.message || 'Unknown error';
+                        }
+                        alert(errorMessage);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        setLinkedinAuthLoading(false);
+                    }
                     
                 } catch (error) {
                     console.error('Error processing LinkedIn callback:', error);
@@ -2344,6 +2442,132 @@ Questions? support@partnerships-careers.com`;
                         </div>
                     )}
                     
+                    {/* Team Requests Section - Only visible to admins */}
+                    {isAdmin && pendingAccessRequests.length > 0 && (
+                        <div className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900 p-6 mb-6 transition-colors duration-200 border-l-4 border-indigo-500">
+                            <div className="flex justify-between items-center mb-4">
+                                <div>
+                                    <h3 className="text-xl font-bold dark:text-white">Team Requests</h3>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                        {pendingAccessRequests.length} pending request{pendingAccessRequests.length !== 1 ? 's' : ''}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="space-y-3">
+                                {pendingAccessRequests.map((request) => (
+                                    <div key={request.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-700 transition-colors duration-200">
+                                        <div className="flex justify-between items-start mb-3">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <p className="font-semibold dark:text-white">{request.requestedByName}</p>
+                                                    <span className="text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-300 px-2 py-0.5 rounded-full font-medium">
+                                                        Pending
+                                                    </span>
+                                                </div>
+                                                <p className="text-sm text-gray-600 dark:text-gray-300 mb-1">{request.requestedByEmail}</p>
+                                                {request.jobTitle && (
+                                                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Title: {request.jobTitle}</p>
+                                                )}
+                                                {request.requestedByLinkedIn && (
+                                                    <a 
+                                                        href={request.requestedByLinkedIn} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                                                    >
+                                                        View LinkedIn Profile →
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2 pt-3 border-t border-gray-200 dark:border-gray-600">
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        // Approve access - add user to company members
+                                                        const membersRef = collection(db, 'companyMembers');
+                                                        
+                                                        // Check if user already exists
+                                                        const existingMemberQuery = query(
+                                                            membersRef,
+                                                            where('email', '==', request.requestedByEmail.toLowerCase())
+                                                        );
+                                                        const existingMemberSnapshot = await getDocs(existingMemberQuery);
+                                                        
+                                                        if (existingMemberSnapshot.empty) {
+                                                            // Add user to company members
+                                                            await addDoc(membersRef, {
+                                                                companyId: request.companyId,
+                                                                email: request.requestedByEmail.toLowerCase(),
+                                                                firstName: request.requestedByName.split(' ')[0] || '',
+                                                                lastName: request.requestedByName.split(' ').slice(1).join(' ') || '',
+                                                                isAdmin: false,
+                                                                joinedAt: new Date().toISOString(),
+                                                            });
+                                                        }
+                                                        
+                                                        // Update access request status
+                                                        const requestRef = doc(db, 'accessRequests', request.id);
+                                                        await updateDoc(requestRef, {
+                                                            status: 'approved',
+                                                            respondedAt: new Date().toISOString(),
+                                                            respondedBy: user?.uid || '',
+                                                        });
+                                                        
+                                                        // Remove from pending requests
+                                                        setPendingAccessRequests(prev => prev.filter(r => r.id !== request.id));
+                                                        
+                                                        // Refresh company members
+                                                        const allMembersQuery = query(membersRef, where('companyId', '==', request.companyId));
+                                                        const allMembersSnapshot = await getDocs(allMembersQuery);
+                                                        const members = allMembersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                                        setCompanyMembers(members);
+                                                        
+                                                        // TODO: Send welcome email to new member
+                                                        
+                                                        alert(`✅ Access approved for ${request.requestedByName}. They can now access the employer dashboard.`);
+                                                    } catch (error) {
+                                                        console.error('Error approving access request:', error);
+                                                        alert('Error approving access: ' + error.message);
+                                                    }
+                                                }}
+                                                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-medium text-sm transition-colors duration-200"
+                                            >
+                                                Approve
+                                            </button>
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        // Update access request status to denied
+                                                        const requestRef = doc(db, 'accessRequests', request.id);
+                                                        await updateDoc(requestRef, {
+                                                            status: 'denied',
+                                                            respondedAt: new Date().toISOString(),
+                                                            respondedBy: user?.uid || '',
+                                                        });
+                                                        
+                                                        // Remove from pending requests
+                                                        setPendingAccessRequests(prev => prev.filter(r => r.id !== request.id));
+                                                        
+                                                        // TODO: Send rejection email
+                                                        
+                                                        alert(`Access request from ${request.requestedByName} has been denied.`);
+                                                    } catch (error) {
+                                                        console.error('Error denying access request:', error);
+                                                        alert('Error denying access: ' + error.message);
+                                                    }
+                                                }}
+                                                className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 font-medium text-sm transition-colors duration-200"
+                                            >
+                                                Deny
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    
                     {/* Team Section */}
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900 p-6 mb-6 transition-colors duration-200">
                         <div className="flex justify-between items-center mb-4">
@@ -3037,12 +3261,53 @@ Questions? support@partnerships-careers.com`;
                                 {isSignUp ? 'Sign Up' : 'Log In'}
                             </button>
                         </form>
+                        {/* LinkedIn Sign-In - Primary method for employers */}
+                        {isSignUp && (
+                            <>
+                                <div className="relative mb-6">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
+                                    </div>
+                                    <div className="relative flex justify-center text-sm">
+                                        <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">Or sign up with</span>
+                                    </div>
+                                </div>
+                                <div className="mb-6">
+                                    <button 
+                                        onClick={handleLinkedInSignIn}
+                                        disabled={linkedinAuthLoading}
+                                        type="button"
+                                        className="w-full bg-[#0A66C2] hover:bg-[#084d94] text-white py-3 rounded-lg font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                                    >
+                                        {linkedinAuthLoading ? (
+                                            <>
+                                                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                Connecting...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                                                </svg>
+                                                Sign Up with LinkedIn
+                                            </>
+                                        )}
+                                    </button>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
+                                        Employers must sign up with LinkedIn for verification
+                                    </p>
+                                </div>
+                            </>
+                        )}
                         <div className="relative mb-6">
                             <div className="absolute inset-0 flex items-center">
-                                <div className="w-full border-t border-gray-300"></div>
+                                <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
                             </div>
                             <div className="relative flex justify-center text-sm">
-                                <span className="px-2 bg-white text-gray-500">Or continue with</span>
+                                <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">Or continue with</span>
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
@@ -3102,6 +3367,85 @@ Questions? support@partnerships-careers.com`;
                                 className="text-indigo-600 hover:text-indigo-700 font-medium"
                             >
                                 {isSignUp ? 'Already have an account? Log in' : "Don't have an account? Sign up"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // Request Access Modal (when company already exists)
+    if (showRequestAccessModal && existingCompanyInfo && linkedinUserData) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4 transition-colors duration-200">
+                <div className="max-w-md w-full">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg dark:shadow-gray-900 p-8 transition-colors duration-200">
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+                            {existingCompanyInfo.name} Already Has an Employer Account
+                        </h2>
+                        <p className="text-gray-600 dark:text-gray-300 mb-6">
+                            Your recruiting team is already here. Request access to join them.
+                        </p>
+                        
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-6">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white mb-2">Current Admin:</p>
+                            <p className="text-sm text-gray-700 dark:text-gray-300">
+                                {existingCompanyInfo.claimedByEmail || 'Email not available'}
+                            </p>
+                        </div>
+                        
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-6">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white mb-2">Your Information:</p>
+                            <p className="text-sm text-gray-700 dark:text-gray-300">{linkedinUserData.firstName} {linkedinUserData.lastName}</p>
+                            <p className="text-sm text-gray-700 dark:text-gray-300">{linkedinUserData.email}</p>
+                            <p className="text-sm text-gray-700 dark:text-gray-300">{linkedinUserData.jobTitle}</p>
+                        </div>
+                        
+                        <div className="flex gap-3">
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        // Create access request
+                                        const accessRequestsRef = collection(db, 'accessRequests');
+                                        await addDoc(accessRequestsRef, {
+                                            companyId: existingCompanyInfo.id,
+                                            companyName: existingCompanyInfo.name,
+                                            requestedByEmail: linkedinUserData.email.toLowerCase(),
+                                            requestedByName: `${linkedinUserData.firstName} ${linkedinUserData.lastName}`.trim(),
+                                            requestedByLinkedIn: linkedinUserData.profileUrl || '',
+                                            jobTitle: linkedinUserData.jobTitle || '',
+                                            status: 'pending',
+                                            createdAt: new Date().toISOString(),
+                                        });
+                                        
+                                        // TODO: Send email to admins (will be implemented)
+                                        
+                                        alert(`Access request sent to ${existingCompanyInfo.name} administrators.\n\nYou'll receive an email when they respond.\n\nTypically takes 1-2 business days.`);
+                                        
+                                        setShowRequestAccessModal(false);
+                                        setLinkedinUserData(null);
+                                        setExistingCompanyInfo(null);
+                                        setShowEmployerLogin(false);
+                                    } catch (error) {
+                                        console.error('Error creating access request:', error);
+                                        alert('Error sending access request: ' + error.message);
+                                    }
+                                }}
+                                className="flex-1 bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 font-medium transition-colors duration-200"
+                            >
+                                Request Access
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowRequestAccessModal(false);
+                                    setLinkedinUserData(null);
+                                    setExistingCompanyInfo(null);
+                                    setShowEmployerLogin(true);
+                                }}
+                                className="px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-300 transition-colors duration-200"
+                            >
+                                Cancel
                             </button>
                         </div>
                     </div>
