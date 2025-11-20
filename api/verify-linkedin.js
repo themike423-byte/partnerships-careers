@@ -57,7 +57,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'No access token received' });
     }
 
-    // Get user profile from LinkedIn
+    // Get user profile from LinkedIn using OpenID Connect userinfo endpoint
     const profileResponse = await fetch('https://api.linkedin.com/v2/userinfo', {
       method: 'GET',
       headers: {
@@ -73,36 +73,66 @@ export default async function handler(req, res) {
 
     const profile = await profileResponse.json();
 
-    // Get email (separate API call for OpenID Connect)
-    let email = null;
-    try {
-      const emailResponse = await fetch('https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-      });
+    // Get email - OpenID Connect includes email in userinfo
+    let email = profile.email || '';
+    
+    // If email not in userinfo, try to get from profile sub claim
+    if (!email) {
+      try {
+        // Try alternative endpoint
+        const emailResponse = await fetch('https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
 
-      if (emailResponse.ok) {
-        const emailData = await emailResponse.json();
-        if (emailData.elements && emailData.elements[0] && emailData.elements[0]['handle~']) {
-          email = emailData.elements[0]['handle~'].emailAddress;
+        if (emailResponse.ok) {
+          const emailData = await emailResponse.json();
+          if (emailData.elements && emailData.elements[0] && emailData.elements[0]['handle~']) {
+            email = emailData.elements[0]['handle~'].emailAddress;
+          }
         }
+      } catch (emailError) {
+        console.error('LinkedIn email error:', emailError);
+        // Continue without email - will error later if not available
       }
-    } catch (emailError) {
-      console.error('LinkedIn email error:', emailError);
-      // Continue without email - will use profile email if available
+    }
+
+    // Get profile URL - try to construct from sub or preferred_username
+    let profileUrl = '';
+    if (profile.preferred_username) {
+      profileUrl = `https://www.linkedin.com/in/${profile.preferred_username}`;
+    } else if (profile.sub) {
+      // Try to get profile URL from profile API
+      try {
+        const profileApiResponse = await fetch('https://api.linkedin.com/v2/me', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
+        if (profileApiResponse.ok) {
+          const profileData = await profileApiResponse.json();
+          if (profileData.vanityName) {
+            profileUrl = `https://www.linkedin.com/in/${profileData.vanityName}`;
+          }
+        }
+      } catch (profileError) {
+        console.error('LinkedIn profile API error:', profileError);
+      }
     }
 
     // Extract user data
     const userData = {
-      linkedinId: profile.sub || profile.id,
-      firstName: profile.given_name || profile.firstName?.localized?.en_US || '',
-      lastName: profile.family_name || profile.lastName?.localized?.en_US || '',
-      email: email || profile.email || '',
+      linkedinId: profile.sub || profile.id || '',
+      firstName: profile.given_name || profile.firstName || '',
+      lastName: profile.family_name || profile.lastName || '',
+      email: email,
       jobTitle: profile.headline || '', // LinkedIn headline often contains job title
       profilePicture: profile.picture || profile.profilePicture || '',
-      profileUrl: `https://www.linkedin.com/in/${profile.preferred_username || ''}`,
+      profileUrl: profileUrl,
+      company: '', // Will be extracted from email domain
     };
 
     res.status(200).json({ 
