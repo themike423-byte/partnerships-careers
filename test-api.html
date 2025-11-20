@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Sheety API</title>
+</head>
+<body>
+    <h1>Testing Sheety API</h1>
+    <button onclick="testAPI()">Test API Connection</button>
+    <div id="result" style="margin-top: 20px; padding: 10px; border: 1px solid #ccc;"></div>
+
+    <script>
+        async function testAPI() {
+            const apiUrl = 'https://api.sheety.co/4ce55d1d0ad684ea192b042bd2f3b53d/partnershipsCareersDb/sheet1';
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing...';
+            
+            try {
+                const response = await fetch(apiUrl);
+                const text = await response.text();
+                
+                resultDiv.innerHTML = `
+                    <h3>Response Status: ${response.status} ${response.statusText}</h3>
+                    <h3>Response:</h3>
+                    <pre style="background: #f5f5f5; padding: 10px; overflow: auto;">${text}</pre>
+                `;
+                
+                if (response.ok) {
+                    try {
+                        const data = JSON.parse(text);
+                        resultDiv.innerHTML += `
+                            <h3>Parsed Data:</h3>
+                            <pre style="background: #e8f5e9; padding: 10px; overflow: auto;">${JSON.stringify(data, null, 2)}</pre>
+                            <p><strong>Number of jobs found: ${data.sheet1 ? data.sheet1.length : 0}</strong></p>
+                        `;
+                    } catch (e) {
+                        resultDiv.innerHTML += `<p style="color: red;">Error parsing JSON: ${e.message}</p>`;
+                    }
+                } else {
+                    resultDiv.innerHTML += `<p style="color: red;">API Error: ${response.status} ${response.statusText}</p>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
+

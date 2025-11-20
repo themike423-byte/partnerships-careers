@@ -1,5 +1,5 @@
-// API endpoint to track job views
-// File: api/track-view.js
+// API endpoint to track Learn More clicks
+// File: api/track-learn-more.js
 
 const admin = require('firebase-admin');
 
@@ -37,16 +37,16 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'Missing jobId' });
     }
 
-    // Update total views in Firestore
+    // Update learn more clicks in Firestore
     const jobRef = db.collection('jobs').doc(jobId);
     const jobDoc = await jobRef.get();
     
     if (jobDoc.exists) {
-      const currentViews = jobDoc.data().totalViews || 0;
+      const currentLearnMoreClicks = jobDoc.data().learnMoreClicks || 0;
       await jobRef.update({
-        totalViews: currentViews + 1
+        learnMoreClicks: currentLearnMoreClicks + 1
       });
-      console.log(`✅ Updated job ${jobId} totalViews to ${currentViews + 1}`);
+      console.log(`✅ Updated job ${jobId} learnMoreClicks to ${currentLearnMoreClicks + 1}`);
     } else {
       console.log(`⚠️ Job ${jobId} not found in Firestore`);
     }
@@ -54,7 +54,8 @@ module.exports = async function handler(req, res) {
     res.status(200).json({ success: true });
     
   } catch (error) {
-    console.error('❌ Error tracking view:', error);
+    console.error('❌ Error tracking learn more:', error);
     res.status(500).json({ error: error.message });
   }
 }
+

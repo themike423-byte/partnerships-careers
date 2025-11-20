@@ -5,6 +5,21 @@
     },
     "api/create-checkout.js": {
       "maxDuration": 10
+    },
+    "api/create-payment-intent.js": {
+      "maxDuration": 10
+    },
+    "api/confirm-payment.js": {
+      "maxDuration": 10
+    },
+    "api/track-learn-more.js": {
+      "maxDuration": 10
+    },
+    "api/track-click.js": {
+      "maxDuration": 10
+    },
+    "api/track-view.js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [

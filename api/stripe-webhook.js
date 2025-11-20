@@ -41,13 +41,22 @@ module.exports = async (req, res) => {
 
     if (jobId) {
       try {
+        // Update the job document to mark it as featured
+        const jobRef = db.collection('jobs').doc(jobId);
+        const expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        
+        await jobRef.update({
+          isFeatured: true,
+          featuredExpiryDate: admin.firestore.Timestamp.fromDate(expiryDate),
+          status: 'active'
+        });
+
+        // Also keep a record in featuredJobs collection for tracking
         await db.collection('featuredJobs').doc(jobId).set({
           jobId: jobId,
           employerId: employerId,
           featuredAt: admin.firestore.FieldValue.serverTimestamp(),
-          expiresAt: admin.firestore.Timestamp.fromDate(
-            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-          ),
+          expiresAt: admin.firestore.Timestamp.fromDate(expiryDate),
           paid: true,
           amount: session.amount_total,
         });

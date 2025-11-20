@@ -1,0 +1,81 @@
+[1mdiff --git a/src/main.jsx b/src/main.jsx[m
+[1mindex 51a8c58..a2ea317 100644[m
+[1m--- a/src/main.jsx[m
+[1m+++ b/src/main.jsx[m
+[36m@@ -1,9 +1,74 @@[m
+ import React from 'react'[m
+ import ReactDOM from 'react-dom/client'[m
+ import App from './App.jsx'[m
+[32m+[m[32mimport './index.css'[m
+ [m
+[32m+[m[32m// Error boundary component[m
+[32m+[m[32mclass ErrorBoundary extends React.Component {[m
+[32m+[m[32m  constructor(props) {[m
+[32m+[m[32m    super(props);[m
+[32m+[m[32m    this.state = { hasError: false, error: null };[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  static getDerivedStateFromError(error) {[m
+[32m+[m[32m    return { hasError: true, error };[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  componentDidCatch(error, errorInfo) {[m
+[32m+[m[32m    console.error('Error caught by boundary:', error, errorInfo);[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  render() {[m
+[32m+[m[32m    if (this.state.hasError) {[m
+[32m+[m[32m      return ([m
+[32m+[m[32m        <div style={{[m[41m [m
+[32m+[m[32m          minHeight: '100vh',[m[41m [m
+[32m+[m[32m          display: 'flex',[m[41m [m
+[32m+[m[32m          alignItems: 'center',[m[41m [m
+[32m+[m[32m          justifyContent: 'center',[m
+[32m+[m[32m          padding: '20px',[m
+[32m+[m[32m          backgroundColor: '#f3f4f6'[m
+[32m+[m[32m        }}>[m
+[32m+[m[32m          <div style={{[m
+[32m+[m[32m            backgroundColor: 'white',[m
+[32m+[m[32m            borderRadius: '8px',[m
+[32m+[m[32m            padding: '32px',[m
+[32m+[m[32m            maxWidth: '500px',[m
+[32m+[m[32m            boxShadow: '0 4px 6px rgba(0,0,0,0.1)'[m
+[32m+[m[32m          }}>[m
+[32m+[m[32m            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626', marginBottom: '16px' }}>[m
+[32m+[m[32m              Application Error[m
+[32m+[m[32m            </h1>[m
+[32m+[m[32m            <p style={{ color: '#374151', marginBottom: '16px' }}>[m
+[32m+[m[32m              {this.state.error?.message || 'An unexpected error occurred'}[m
+[32m+[m[32m            </p>[m
+[32m+[m[32m            <button[m
+[32m+[m[32m              onClick={() => window.location.reload()}[m
+[32m+[m[32m              style={{[m
+[32m+[m[32m                backgroundColor: '#4f46e5',[m
+[32m+[m[32m                color: 'white',[m
+[32m+[m[32m                padding: '8px 16px',[m
+[32m+[m[32m                borderRadius: '4px',[m
+[32m+[m[32m                border: 'none',[m
+[32m+[m[32m                cursor: 'pointer'[m
+[32m+[m[32m              }}[m
+[32m+[m[32m            >[m
+[32m+[m[32m              Reload Page[m
+[32m+[m[32m            </button>[m
+[32m+[m[32m          </div>[m
+[32m+[m[32m        </div>[m
+[32m+[m[32m      );[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    return this.props.children;[m
+[32m+[m[32m  }[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m// Firebase Auth is used directly - no provider needed[m
+ ReactDOM.createRoot(document.getElementById('root')).render([m
+   <React.StrictMode>[m
+[31m-    <App />[m
+[32m+[m[32m    <ErrorBoundary>[m
+[32m+[m[32m      <App />[m
+[32m+[m[32m    </ErrorBoundary>[m
+   </React.StrictMode>,[m
+[31m-)[m
+[32m+[m[32m);[m
