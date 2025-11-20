@@ -36,6 +36,12 @@ STRIPE_AMOUNT = 9900
 VITE_STRIPE_PUBLISHABLE_KEY = pk_test_... (your Stripe publishable key from Stripe Dashboard)
 ```
 
+#### LinkedIn
+```
+VITE_LINKEDIN_CLIENT_ID = 7719ehan5tequ0
+LINKEDIN_CLIENT_SECRET = (your LinkedIn client secret from LinkedIn Developers dashboard)
+```
+
 #### Site Configuration
 ```
 SITE_URL = https://your-vercel-url.vercel.app
@@ -95,6 +101,8 @@ FIREBASE_PRIVATE_KEY=
 STRIPE_SECRET_KEY=
 STRIPE_AMOUNT=9900
 VITE_STRIPE_PUBLISHABLE_KEY=
+VITE_LINKEDIN_CLIENT_ID=7719ehan5tequ0
+LINKEDIN_CLIENT_SECRET=
 SITE_URL=
 STRIPE_WEBHOOK_SECRET=
 ```
