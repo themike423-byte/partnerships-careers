@@ -3174,9 +3174,9 @@ function App() {
                                     
                                     return (
                                         <div key={job.id || index} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm dark:shadow-gray-900 p-0 mb-4 border-2 border-yellow-400 dark:border-yellow-500 relative overflow-hidden transition-colors duration-200">
-                                            <div className="flex">
+                                            <div className="flex flex-col sm:flex-row">
                                                 {/* Left: Logo Section */}
-                                                <div className="flex-shrink-0 w-36 p-6 flex items-center justify-center bg-gray-50 dark:bg-gray-700">
+                                                <div className="flex-shrink-0 w-full sm:w-36 p-4 sm:p-6 flex items-center justify-center bg-gray-50 dark:bg-gray-700">
                                                     {job.companyLogo ? (
                                                         <img 
                                                             src={job.companyLogo}
@@ -3196,13 +3196,13 @@ function App() {
                                                 </div>
                                                 
                                                 {/* Divider */}
-                                                <div className="w-px bg-gray-200 dark:bg-gray-700"></div>
+                                                <div className="hidden sm:block w-px bg-gray-200 dark:bg-gray-700"></div>
                                                 
                                                 {/* Right: Content Section */}
-                                                <div className="flex-1 p-6">
-                                                    <div className="flex items-start justify-between mb-3">
-                                                        <div className="flex-1">
-                                                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2.5">{job.title}</h3>
+                                                <div className="flex-1 p-4 sm:p-6">
+                                                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-3 gap-2">
+                                                        <div className="flex-1 min-w-0">
+                                                            <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-2 sm:mb-2.5 pr-2">{job.title}</h3>
                                                             
                                                             {/* Details Line */}
                                                             <div className="flex items-center gap-2 text-base text-gray-600 dark:text-gray-300 mb-3 flex-wrap">
@@ -3257,7 +3257,7 @@ function App() {
                                                         </div>
                                                         
                                                         {/* Right side: Level badge, star, and timestamp */}
-                                                        <div className="flex-shrink-0 flex flex-col items-end gap-2 ml-4">
+                                                        <div className="flex-shrink-0 flex flex-row sm:flex-col sm:items-end gap-2 sm:ml-4">
                                                             <span className="bg-indigo-100 text-indigo-800 px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap">
                                                                 {job.level}
                                                             </span>
@@ -3289,16 +3289,16 @@ function App() {
                                                     )}
                                                     
                                                     {/* Buttons */}
-                                                    <div className="flex gap-3">
+                                                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mt-2">
                                                         <button 
                                                             onClick={() => handleLearnMore(job)}
-                                                            className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-sm transition-colors"
+                                                            className="flex-1 sm:flex-none bg-indigo-600 text-white px-4 sm:px-6 py-2.5 rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-sm transition-colors"
                                                         >
                                                             Learn More
                                                         </button>
                                                         <button 
                                                             onClick={() => trackJobClick(job.id, job.link, db)}
-                                                            className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-sm transition-colors"
+                                                            className="flex-1 sm:flex-none bg-indigo-600 text-white px-4 sm:px-6 py-2.5 rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-sm transition-colors"
                                                         >
                                                             Apply Now
                                                         </button>
@@ -3321,9 +3321,9 @@ function App() {
                                     
                                     return (
                                         <div key={job.id || index} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm dark:shadow-gray-900 p-0 mb-4 overflow-hidden transition-colors duration-200">
-                                            <div className="flex">
+                                            <div className="flex flex-col sm:flex-row">
                                                 {/* Left: Logo Section */}
-                                                <div className="flex-shrink-0 w-36 p-6 flex items-center justify-center bg-gray-50 dark:bg-gray-700">
+                                                <div className="flex-shrink-0 w-full sm:w-36 p-4 sm:p-6 flex items-center justify-center bg-gray-50 dark:bg-gray-700">
                                                     {job.companyLogo ? (
                                                         <img 
                                                             src={job.companyLogo}
@@ -3404,7 +3404,7 @@ function App() {
                                                         </div>
                                                         
                                                         {/* Right side: Level badge, star, and timestamp */}
-                                                        <div className="flex-shrink-0 flex flex-col items-end gap-2 ml-4">
+                                                        <div className="flex-shrink-0 flex flex-row sm:flex-col sm:items-end gap-2 sm:ml-4">
                                                             <span className="bg-indigo-100 text-indigo-800 px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap">
                                                                 {job.level}
                                                             </span>
@@ -3436,16 +3436,16 @@ function App() {
                                                     )}
                                                     
                                                     {/* Buttons */}
-                                                    <div className="flex gap-3">
+                                                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mt-2">
                                                         <button 
                                                             onClick={() => handleLearnMore(job)}
-                                                            className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-sm transition-colors"
+                                                            className="flex-1 sm:flex-none bg-indigo-600 text-white px-4 sm:px-6 py-2.5 rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-sm transition-colors"
                                                         >
                                                             Learn More
                                                         </button>
                                                         <button 
                                                             onClick={() => trackJobClick(job.id, job.link, db)}
-                                                            className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-sm transition-colors"
+                                                            className="flex-1 sm:flex-none bg-indigo-600 text-white px-4 sm:px-6 py-2.5 rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-sm transition-colors"
                                                         >
                                                             Apply Now
                                                         </button>
