@@ -208,6 +208,24 @@ const createSlug = (name) => {
         .replace(/(^-|-$)/g, '');
 };
 
+// Helper: Check if job title indicates recruiter/HR role
+const isRecruiterRole = (jobTitle) => {
+    if (!jobTitle) return false;
+    
+    const recruiterKeywords = [
+        'recruiter', 'talent', 'acquisition', 'hiring', 
+        'people ops', 'hr', 'human resources', 'staffing',
+        'talent partner', 'sourcer', 'head of talent',
+        'talent acquisition', 'recruiting', 'recruitment',
+        'people operations', 'people team', 'talent management',
+        'talent development', 'employee relations', 'people & culture',
+        'talent ops', 'people ops', 'talent coordinator'
+    ];
+    
+    const titleLower = jobTitle.toLowerCase();
+    return recruiterKeywords.some(keyword => titleLower.includes(keyword));
+};
+
 // Helper: Check if email is a personal email domain
 const isPersonalEmailDomain = (email) => {
     if (!email) return false;
@@ -514,6 +532,11 @@ function App() {
     const [inviteEmail, setInviteEmail] = useState('');
     const [showCompanyPage, setShowCompanyPage] = useState(false);
     const [showJobForm, setShowJobForm] = useState(false);
+    const [linkedinAuthLoading, setLinkedinAuthLoading] = useState(false);
+    const [showRequestAccessModal, setShowRequestAccessModal] = useState(false);
+    const [existingCompanyInfo, setExistingCompanyInfo] = useState(null);
+    const [pendingAccessRequests, setPendingAccessRequests] = useState([]);
+    const [linkedinUserData, setLinkedinUserData] = useState(null);
     const [showPaymentForm, setShowPaymentForm] = useState(false);
     const [paymentClientSecret, setPaymentClientSecret] = useState(null);
     const [paymentIntentId, setPaymentIntentId] = useState(null);
@@ -1382,6 +1405,139 @@ function App() {
             alert(errorMessage);
         }
     };
+    
+    // LinkedIn OAuth handler for employer verification
+    const handleLinkedInSignIn = async () => {
+        try {
+            setLinkedinAuthLoading(true);
+            const clientId = import.meta.env.VITE_LINKEDIN_CLIENT_ID || '';
+            
+            if (!clientId) {
+                alert('LinkedIn integration not configured yet. Please add VITE_LINKEDIN_CLIENT_ID to your environment variables.');
+                setLinkedinAuthLoading(false);
+                return;
+            }
+            
+            // Get redirect URI
+            const redirectUri = `${window.location.origin}/auth/linkedin/callback`;
+            
+            // Build LinkedIn OAuth URL
+            const linkedinAuthUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=linkedin_oauth_state&scope=openid%20profile%20email`;
+            
+            // Store state for verification
+            sessionStorage.setItem('linkedin_oauth_state', 'linkedin_oauth_state');
+            sessionStorage.setItem('linkedin_redirect_uri', redirectUri);
+            
+            // Redirect to LinkedIn
+            window.location.href = linkedinAuthUrl;
+        } catch (error) {
+            console.error('❌ Error initiating LinkedIn sign-in:', error);
+            alert('Error connecting to LinkedIn: ' + (error.message || 'Unknown error'));
+            setLinkedinAuthLoading(false);
+        }
+    };
+
+    // Process LinkedIn OAuth callback
+    useEffect(() => {
+        const handleLinkedInCallback = async () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const state = urlParams.get('state');
+            const error = urlParams.get('error');
+            
+            if (error) {
+                console.error('LinkedIn OAuth error:', error);
+                alert('LinkedIn sign-in was cancelled or failed. Please try again.');
+                // Clean up URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+                return;
+            }
+            
+            if (code && state === 'linkedin_oauth_state') {
+                try {
+                    setLinkedinAuthLoading(true);
+                    const redirectUri = sessionStorage.getItem('linkedin_redirect_uri') || `${window.location.origin}/auth/linkedin/callback`;
+                    
+                    // Verify LinkedIn token and get user data
+                    const response = await fetch('/api/verify-linkedin', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ code, redirectUri }),
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                        throw new Error(errorData.error || 'Failed to verify LinkedIn account');
+                    }
+                    
+                    const result = await response.json();
+                    const userData = result.userData;
+                    
+                    if (!userData || !userData.email) {
+                        throw new Error('Could not retrieve email from LinkedIn');
+                    }
+                    
+                    // Verify job title
+                    if (!isRecruiterRole(userData.jobTitle)) {
+                        const errorMessage = `Your LinkedIn shows you're a ${userData.jobTitle || 'Unknown Title'} at ${userData.company || 'your company'}.
+
+This platform is for recruiting and HR teams only.
+
+✅ If you're in recruiting: Update your LinkedIn title to include 'Recruiter', 'Talent Acquisition', or 'HR'
+✅ If you're not in recruiting: Have your recruiting team sign up instead
+
+Questions? support@partnerships-careers.com`;
+                        
+                        alert(errorMessage);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        setLinkedinAuthLoading(false);
+                        return;
+                    }
+                    
+                    // Check if company already exists by email domain
+                    const emailDomain = getEmailDomain(userData.email);
+                    const companiesRef = collection(db, 'companies');
+                    const allCompaniesSnapshot = await getDocs(companiesRef);
+                    let existingCompany = null;
+                    
+                    allCompaniesSnapshot.forEach((docSnapshot) => {
+                        const companyData = docSnapshot.data();
+                        if (companyData.emailDomain && companyData.emailDomain === emailDomain) {
+                            existingCompany = { id: docSnapshot.id, ...companyData };
+                        }
+                    });
+                    
+                    if (existingCompany) {
+                        // Company exists - show request access flow
+                        setLinkedinUserData(userData);
+                        setExistingCompanyInfo(existingCompany);
+                        setShowRequestAccessModal(true);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        setLinkedinAuthLoading(false);
+                        return;
+                    }
+                    
+                    // Company doesn't exist - create new account
+                    // Store LinkedIn data for account creation
+                    setLinkedinUserData(userData);
+                    
+                    // Continue with account creation flow (will be implemented)
+                    // For now, show success message
+                    alert('LinkedIn verification successful! Account creation flow will continue...');
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    setLinkedinAuthLoading(false);
+                    
+                } catch (error) {
+                    console.error('Error processing LinkedIn callback:', error);
+                    alert('Error processing LinkedIn sign-in: ' + error.message);
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    setLinkedinAuthLoading(false);
+                }
+            }
+        };
+        
+        handleLinkedInCallback();
+    }, []);
     
 
     const handleGoogleSignIn = async () => {
