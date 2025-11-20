@@ -3205,7 +3205,7 @@ function App() {
                                                             <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-2 sm:mb-2.5 pr-2">{job.title}</h3>
                                                             
                                                             {/* Details Line */}
-                                                            <div className="flex items-center gap-2 text-base text-gray-600 dark:text-gray-300 mb-3 flex-wrap">
+                                                            <div className="flex items-center gap-2 text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-3 flex-wrap">
                                                                 <span>{job.company}</span>
                                                                 <span>·</span>
                                                                 <span>{job.type || 'Full-Time'}</span>
@@ -3352,7 +3352,7 @@ function App() {
                                                             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2.5">{job.title}</h3>
                                                             
                                                             {/* Details Line */}
-                                                            <div className="flex items-center gap-2 text-base text-gray-600 dark:text-gray-300 mb-3 flex-wrap">
+                                                            <div className="flex items-center gap-2 text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-3 flex-wrap">
                                                                 <span>{job.company}</span>
                                                                 <span>·</span>
                                                                 <span>{job.type || 'Full-Time'}</span>
