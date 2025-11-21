@@ -12,7 +12,9 @@ Add these to your `.env` file or Vercel environment variables:
 
 ```bash
 # Resend API Key (for sending emails)
-RESEND_API_KEY=re_QrCd6cxj_LKmkc9VaEGGnVBhEAtyvP9mr
+# ⚠️ IMPORTANT: Never commit your API key to GitHub!
+# Get your API key from: https://resend.com/api-keys
+RESEND_API_KEY=your_resend_api_key_here
 
 # Stripe Keys
 STRIPE_SECRET_KEY=sk_test_YOUR_SECRET_KEY
