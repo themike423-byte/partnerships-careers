@@ -92,18 +92,18 @@ export default async function handler(req, res) {
     }
 
     // Create subscription with incomplete payment (will be confirmed after payment method is attached)
-    // Use 'pending_if_incomplete' to ensure payment intent is created
+    // Use 'default_incomplete' for subscriptions - this creates an invoice with a payment intent
     const subscription = await stripe.subscriptions.create({
       customer: customerId,
       items: [{
         price: priceId,
       }],
-      payment_behavior: 'pending_if_incomplete',
+      payment_behavior: 'default_incomplete',
       payment_settings: { 
         save_default_payment_method: 'on_subscription',
         payment_method_types: ['card']
       },
-      expand: ['latest_invoice.payment_intent', 'pending_setup_intent'],
+      expand: ['latest_invoice.payment_intent'],
       metadata: {
         type: 'realtime_alerts',
         email: normalizedEmail,
@@ -114,91 +114,52 @@ export default async function handler(req, res) {
     console.log('Subscription created:', {
       id: subscription.id,
       status: subscription.status,
-      latest_invoice: subscription.latest_invoice,
-      pending_setup_intent: subscription.pending_setup_intent
+      latest_invoice: subscription.latest_invoice ? (typeof subscription.latest_invoice === 'string' ? subscription.latest_invoice : subscription.latest_invoice.id) : 'none'
     });
 
-    // Get the invoice and payment intent
+    // Get the invoice - it should be expanded already
     let invoice;
     if (typeof subscription.latest_invoice === 'string') {
+      // If it's a string, retrieve it with expansion
       invoice = await stripe.invoices.retrieve(subscription.latest_invoice, {
         expand: ['payment_intent']
       });
     } else {
+      // It's already expanded
       invoice = subscription.latest_invoice;
     }
 
-    console.log('Invoice retrieved:', {
+    console.log('Invoice details:', {
       id: invoice.id,
       status: invoice.status,
-      payment_intent: invoice.payment_intent,
+      payment_intent: invoice.payment_intent ? (typeof invoice.payment_intent === 'string' ? invoice.payment_intent : invoice.payment_intent.id) : 'none',
       payment_intent_type: typeof invoice.payment_intent
     });
 
+    // Get the payment intent
     let paymentIntent;
-    
-    // Check if invoice has a payment intent
-    if (invoice.payment_intent) {
-      if (typeof invoice.payment_intent === 'string') {
-        paymentIntent = await stripe.paymentIntents.retrieve(invoice.payment_intent);
-      } else {
-        paymentIntent = invoice.payment_intent;
-      }
-    } else if (subscription.pending_setup_intent) {
-      // If no payment intent but there's a pending setup intent, use that
-      // But for subscriptions, we need a payment intent, not a setup intent
-      // So we'll need to create the payment intent from the invoice
-      console.log('No payment intent on invoice, but subscription has pending_setup_intent');
-      
-      // Try to finalize the invoice to create a payment intent
-      try {
-        invoice = await stripe.invoices.finalizeInvoice(invoice.id, {
-          expand: ['payment_intent']
-        });
-        
-        if (invoice.payment_intent) {
-          if (typeof invoice.payment_intent === 'string') {
-            paymentIntent = await stripe.paymentIntents.retrieve(invoice.payment_intent);
-          } else {
-            paymentIntent = invoice.payment_intent;
-          }
-        }
-      } catch (finalizeError) {
-        console.error('Error finalizing invoice:', finalizeError);
-      }
+    if (!invoice.payment_intent) {
+      // If there's no payment intent, the invoice might need to be finalized
+      // But for subscriptions with default_incomplete, the payment intent should exist
+      throw new Error(`Invoice ${invoice.id} has no payment intent. Invoice status: ${invoice.status}. This usually means the subscription creation failed or the invoice is in an unexpected state.`);
     }
 
-    // If still no payment intent, the invoice might be in draft status
-    // Try to pay it which will create a payment intent
-    if (!paymentIntent && invoice.status === 'draft') {
-      try {
-        invoice = await stripe.invoices.finalizeInvoice(invoice.id, {
-          expand: ['payment_intent']
-        });
-        
-        if (invoice.payment_intent) {
-          if (typeof invoice.payment_intent === 'string') {
-            paymentIntent = await stripe.paymentIntents.retrieve(invoice.payment_intent);
-          } else {
-            paymentIntent = invoice.payment_intent;
-          }
-        }
-      } catch (error) {
-        console.error('Error finalizing draft invoice:', error);
-      }
+    if (typeof invoice.payment_intent === 'string') {
+      // Payment intent is just an ID, retrieve it
+      paymentIntent = await stripe.paymentIntents.retrieve(invoice.payment_intent);
+    } else {
+      // Payment intent is already expanded
+      paymentIntent = invoice.payment_intent;
     }
 
-    if (!paymentIntent) {
-      throw new Error(`Failed to get payment intent. Invoice ID: ${invoice.id}, Invoice status: ${invoice.status}, Subscription status: ${subscription.status}, Latest invoice type: ${typeof subscription.latest_invoice}`);
-    }
+    console.log('Payment intent details:', {
+      id: paymentIntent.id,
+      status: paymentIntent.status,
+      hasClientSecret: !!paymentIntent.client_secret
+    });
 
     if (!paymentIntent.client_secret) {
-      console.error('Payment intent details:', {
-        id: paymentIntent.id,
-        status: paymentIntent.status,
-        hasClientSecret: !!paymentIntent.client_secret
-      });
-      throw new Error('Payment intent exists but has no client_secret');
+      throw new Error(`Payment intent ${paymentIntent.id} exists but has no client_secret. Status: ${paymentIntent.status}`);
     }
 
     // Update payment intent metadata so webhook can identify it
