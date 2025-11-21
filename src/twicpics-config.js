@@ -1,6 +1,8 @@
 // TwicPics Configuration
 // Get domain from environment variable or use default
+// Set VITE_TWICPICS_DOMAIN in your .env file or Vercel environment variables
 export const TWICPICS_DOMAIN = import.meta.env.VITE_TWICPICS_DOMAIN || 'https://partnerships-careers.twic.pics';
+// Set VITE_TWICPICS_API_KEY in your .env file or Vercel environment variables
 export const TWICPICS_API_KEY = import.meta.env.VITE_TWICPICS_API_KEY || '94a1ffe3-e066-4704-886a-b7f5175b8034';
 
 // TwicPics helper function to get optimized image URL
