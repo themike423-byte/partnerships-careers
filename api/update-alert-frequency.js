@@ -75,17 +75,7 @@ export default async function handler(req, res) {
       const subscription = await stripe.subscriptions.create({
         customer: customerId,
         items: [{
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: 'Partnerships Careers - Realtime Job Alerts',
-              description: 'Get instant notifications when new partnership jobs are posted'
-            },
-            unit_amount: 500, // $5.00
-            recurring: {
-              interval: 'month'
-            }
-          }
+          price: process.env.STRIPE_REALTIME_ALERTS_PRICE_ID || 'price_1SW0FACaW2Du37V1Xwv0hG6w'
         }],
         metadata: { alertId: alertId, email: normalizedEmail }
       });

@@ -61,21 +61,14 @@ export default async function handler(req, res) {
       alertId = newAlertRef.id;
     }
 
+    // Get price ID from environment variable or use default
+    const priceId = process.env.STRIPE_REALTIME_ALERTS_PRICE_ID || 'price_1SW0FACaW2Du37V1Xwv0hG6w';
+
     // Create Stripe Checkout Session for subscription
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: 'Partnerships Careers - Realtime Job Alerts',
-            description: 'Get instant notifications when new partnership jobs are posted'
-          },
-          unit_amount: 500, // $5.00
-          recurring: {
-            interval: 'month'
-          }
-        },
+        price: priceId,
         quantity: 1,
       }],
       mode: 'subscription',
