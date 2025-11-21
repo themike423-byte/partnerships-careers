@@ -1,7 +1,13 @@
 // Vercel Serverless Function to parse job listing from URL using Hugging Face AI
 import { HfInference } from '@huggingface/inference';
 
-const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+// Initialize Hugging Face client
+let hf;
+if (process.env.HUGGINGFACE_API_KEY) {
+  hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+} else {
+  console.warn('HUGGINGFACE_API_KEY not set - AI parsing will fail');
+}
 
 // Use a good instruction-following model for structured extraction
 // Options: mistralai/Mistral-7B-Instruct-v0.2, meta-llama/Llama-2-7b-chat-hf, or google/flan-t5-xxl
@@ -39,21 +45,38 @@ export default async function handler(req, res) {
 
     // Check if Hugging Face API key is configured
     if (!process.env.HUGGINGFACE_API_KEY) {
+      console.error('HUGGINGFACE_API_KEY environment variable is not set');
       return res.status(500).json({ 
         error: 'AI parsing not configured. Please add HUGGINGFACE_API_KEY to environment variables.' 
       });
     }
 
+    if (!hf) {
+      hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+    }
+
     // Fetch the URL content
-    console.log('Fetching URL content:', url);
-    const fetchResponse = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
-    });
+    console.log('[AI Parser] Fetching URL content:', url);
+    let fetchResponse;
+    try {
+      fetchResponse = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        },
+        timeout: 10000 // 10 second timeout
+      });
+    } catch (fetchError) {
+      console.error('[AI Parser] Failed to fetch URL:', fetchError);
+      return res.status(400).json({ 
+        error: `Failed to fetch URL: ${fetchError.message}` 
+      });
+    }
 
     if (!fetchResponse.ok) {
-      throw new Error(`Failed to fetch URL: ${fetchResponse.status} ${fetchResponse.statusText}`);
+      return res.status(400).json({ 
+        error: `Failed to fetch URL: ${fetchResponse.status} ${fetchResponse.statusText}` 
+      });
     }
 
     const htmlContent = await fetchResponse.text();
@@ -62,6 +85,7 @@ export default async function handler(req, res) {
     let textContent = htmlContent
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -77,11 +101,16 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log('Extracted text content length:', textContent.length);
+    console.log('[AI Parser] Extracted text content length:', textContent.length);
+    console.log('[AI Parser] First 200 chars:', textContent.substring(0, 200));
 
     // Use Hugging Face to extract structured job data
-    const prompt = `You are a job listing parser. Extract structured data from the following job listing content. Return ONLY a valid JSON object with these exact fields (use empty strings or null for missing data):
+    // Format prompt for instruction-following models
+    const prompt = `<s>[INST] You are a job listing parser. Extract structured data from the following job listing content.
 
+Return ONLY a valid JSON object with these exact fields. Use empty strings "" for missing text fields, false for missing booleans.
+
+Required JSON structure:
 {
   "title": "Job title",
   "company": "Company name",
@@ -91,66 +120,117 @@ export default async function handler(req, res) {
   "category": "Channel & Reseller, Partner Marketing, Partner Sales, Partner Success, or Partner Operations",
   "region": "NAmer, EMEA, APAC, or LATAM",
   "description": "Full job description",
-  "link": "Application URL (use the provided URL if not found)",
+  "link": "${url}",
   "salaryRange": "Salary range if mentioned (e.g., $120K-$180K)",
   "companyLogo": "",
   "companyStage": "Startup, Series A, Series B, Series C+, Public, or Private",
   "companySize": "1-10, 11-50, 51-200, 201-500, 501-1000, or 1000+",
-  "isRemote": true or false,
-  "hasEquity": true or false,
-  "hasVisa": true or false
+  "isRemote": false,
+  "hasEquity": false,
+  "hasVisa": false
 }
 
 Job listing content:
 ${textContent}
 
-Return ONLY the JSON object, no other text.`;
+IMPORTANT: Return ONLY the JSON object. No explanations, no markdown, no code blocks. Start with { and end with }. [/INST]`;
 
-    console.log('Sending to Hugging Face for parsing...');
+    console.log('[AI Parser] Sending to Hugging Face for parsing...');
+    console.log('[AI Parser] Using model:', MODEL_NAME);
     
-    // Use textGeneration for instruction-following models
-    const response = await hf.textGeneration({
-      model: MODEL_NAME,
-      inputs: prompt,
-      parameters: {
-        max_new_tokens: 1000,
-        temperature: 0.3,
-        return_full_text: false,
-        do_sample: true,
-      },
-    });
+    let aiResponse;
+    try {
+      // Use textGeneration for instruction-following models
+      const response = await hf.textGeneration({
+        model: MODEL_NAME,
+        inputs: prompt,
+        parameters: {
+          max_new_tokens: 1500,
+          temperature: 0.1, // Lower temperature for more consistent JSON output
+          return_full_text: false,
+          do_sample: false, // Set to false for more deterministic output
+          top_p: 0.95,
+        },
+      });
 
-    const aiResponse = response.generated_text?.trim();
-    
-    if (!aiResponse) {
-      throw new Error('No response from AI');
+      aiResponse = response.generated_text?.trim();
+      
+      if (!aiResponse) {
+        throw new Error('No response from Hugging Face API');
+      }
+
+      console.log('[AI Parser] Raw AI response length:', aiResponse.length);
+      console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
+      
+    } catch (hfError) {
+      console.error('[AI Parser] Hugging Face API error:', hfError);
+      console.error('[AI Parser] Error details:', {
+        message: hfError.message,
+        stack: hfError.stack,
+        name: hfError.name
+      });
+      
+      return res.status(500).json({ 
+        error: 'Failed to parse with AI', 
+        message: hfError.message,
+        details: process.env.NODE_ENV === 'development' ? hfError.stack : undefined
+      });
     }
-
-    console.log('AI Response:', aiResponse);
 
     // Parse the JSON response - try to extract JSON from the response
     let parsedData;
     try {
-      // Try parsing directly
-      parsedData = JSON.parse(aiResponse);
-    } catch (parseError) {
-      // Try to extract JSON from markdown code blocks or text
-      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+      // First, try to clean up the response - remove any markdown code blocks
+      let cleanedResponse = aiResponse
+        .replace(/```json\s*/g, '')
+        .replace(/```\s*/g, '')
+        .trim();
+      
+      // Try to find JSON object in the response
+      const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        try {
-          parsedData = JSON.parse(jsonMatch[0]);
-        } catch (e) {
-          console.error('Failed to parse extracted JSON:', jsonMatch[0]);
-          throw new Error('AI response is not valid JSON');
+        cleanedResponse = jsonMatch[0];
+      }
+      
+      // Try parsing directly
+      parsedData = JSON.parse(cleanedResponse);
+      console.log('[AI Parser] Successfully parsed JSON');
+      
+    } catch (parseError) {
+      console.error('[AI Parser] Failed to parse JSON:', parseError);
+      console.error('[AI Parser] AI response that failed to parse:', aiResponse);
+      
+      // Try one more time with more aggressive cleaning
+      try {
+        // Remove everything before first { and after last }
+        const firstBrace = aiResponse.indexOf('{');
+        const lastBrace = aiResponse.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          const extractedJson = aiResponse.substring(firstBrace, lastBrace + 1);
+          parsedData = JSON.parse(extractedJson);
+          console.log('[AI Parser] Successfully parsed JSON after extraction');
+        } else {
+          throw new Error('No JSON object found in AI response');
         }
-      } else {
-        console.error('No JSON found in AI response:', aiResponse);
-        throw new Error('AI response does not contain valid JSON');
+      } catch (secondParseError) {
+        return res.status(500).json({ 
+          error: 'AI returned invalid JSON format', 
+          message: `Failed to parse AI response: ${parseError.message}`,
+          aiResponse: aiResponse.substring(0, 1000), // Include first 1000 chars for debugging
+          details: process.env.NODE_ENV === 'development' ? parseError.stack : undefined
+        });
       }
     }
 
+    // Validate and clean the parsed data
+    if (!parsedData || typeof parsedData !== 'object') {
+      return res.status(500).json({ 
+        error: 'AI returned invalid data structure' 
+      });
+    }
+
     // Ensure link is set to the provided URL if not found
-    if (!parsedData.link || parsedData.link === '') {
+    if (!parsedData.link || parsedData.link.trim() === '') {
       parsedData.link = url;
     }
 
@@ -165,21 +245,39 @@ Return ONLY the JSON object, no other text.`;
 
     // Ensure boolean fields are actually booleans
     if (typeof parsedData.isRemote === 'string') {
-      parsedData.isRemote = parsedData.isRemote.toLowerCase() === 'true';
+      parsedData.isRemote = parsedData.isRemote.toLowerCase() === 'true' || parsedData.isRemote.toLowerCase() === 'yes';
     }
     if (typeof parsedData.hasEquity === 'string') {
-      parsedData.hasEquity = parsedData.hasEquity.toLowerCase() === 'true';
+      parsedData.hasEquity = parsedData.hasEquity.toLowerCase() === 'true' || parsedData.hasEquity.toLowerCase() === 'yes';
     }
     if (typeof parsedData.hasVisa === 'string') {
-      parsedData.hasVisa = parsedData.hasVisa.toLowerCase() === 'true';
+      parsedData.hasVisa = parsedData.hasVisa.toLowerCase() === 'true' || parsedData.hasVisa.toLowerCase() === 'yes';
     }
 
-    console.log('Parsed data:', parsedData);
+    // Ensure string fields are strings
+    parsedData.title = String(parsedData.title || '').trim();
+    parsedData.company = String(parsedData.company || '').trim();
+    parsedData.location = String(parsedData.location || '').trim();
+    parsedData.description = String(parsedData.description || '').trim();
+    parsedData.link = String(parsedData.link || url).trim();
+    parsedData.salaryRange = String(parsedData.salaryRange || '').trim();
+    parsedData.companyLogo = String(parsedData.companyLogo || '').trim();
+    parsedData.companyStage = String(parsedData.companyStage || '').trim();
+    parsedData.companySize = String(parsedData.companySize || '').trim();
+
+    console.log('[AI Parser] Successfully parsed job data:', {
+      title: parsedData.title,
+      company: parsedData.company,
+      location: parsedData.location,
+      hasDescription: !!parsedData.description,
+      descriptionLength: parsedData.description.length
+    });
 
     return res.status(200).json(parsedData);
 
   } catch (error) {
-    console.error('Error parsing job URL:', error);
+    console.error('[AI Parser] Unexpected error:', error);
+    console.error('[AI Parser] Error stack:', error.stack);
     return res.status(500).json({ 
       error: 'Failed to parse job URL', 
       message: error.message,
