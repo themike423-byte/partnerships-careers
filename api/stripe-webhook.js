@@ -26,12 +26,71 @@ export default async function handler(req, res) {
   // Handle different event types
   try {
     switch (event.type) {
+      case 'payment_intent.succeeded':
+        const paymentIntent = event.data.object;
+        console.log('Payment intent succeeded:', paymentIntent.id);
+        
+        // Handle subscription payment intents for realtime alerts
+        if (paymentIntent.metadata && paymentIntent.metadata.type === 'realtime_alerts' && paymentIntent.metadata.alertId) {
+          try {
+            const alertRef = db.collection('jobAlerts').doc(paymentIntent.metadata.alertId);
+            const alertDoc = await alertRef.get();
+            
+            if (alertDoc.exists) {
+              await alertRef.update({
+                frequency: 'realtime',
+                isActive: true,
+                paymentPending: false,
+                stripeCustomerId: paymentIntent.customer,
+                stripePaymentIntentId: paymentIntent.id,
+                updatedAt: new Date().toISOString()
+              });
+              console.log(`Realtime alert ${paymentIntent.metadata.alertId} activated after payment`);
+            }
+          } catch (error) {
+            console.error('Error updating alert after payment:', error);
+          }
+          return res.status(200).json({ received: true });
+        }
+        break;
+
+      case 'invoice.payment_succeeded':
+        const invoice = event.data.object;
+        console.log('Invoice payment succeeded:', invoice.id);
+        
+        // Handle subscription invoice payments for realtime alerts
+        if (invoice.subscription) {
+          try {
+            const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+            if (subscription.metadata && subscription.metadata.type === 'realtime_alerts' && subscription.metadata.alertId) {
+              const alertRef = db.collection('jobAlerts').doc(subscription.metadata.alertId);
+              const alertDoc = await alertRef.get();
+              
+              if (alertDoc.exists) {
+                await alertRef.update({
+                  frequency: 'realtime',
+                  isActive: true,
+                  paymentPending: false,
+                  stripeCustomerId: subscription.customer,
+                  stripeSubscriptionId: subscription.id,
+                  updatedAt: new Date().toISOString()
+                });
+                console.log(`Realtime alert ${subscription.metadata.alertId} activated after invoice payment`);
+              }
+            }
+          } catch (error) {
+            console.error('Error updating alert after invoice payment:', error);
+          }
+          return res.status(200).json({ received: true });
+        }
+        break;
+
       case 'checkout.session.completed':
         const session = event.data.object;
         console.log('Payment successful for session:', session.id);
         console.log('Metadata:', session.metadata);
 
-        // Handle realtime alert subscriptions
+        // Handle realtime alert subscriptions from hosted checkout (legacy)
         if (session.metadata && session.metadata.type === 'realtime_alerts' && session.metadata.alertId) {
           try {
             const alertRef = db.collection('jobAlerts').doc(session.metadata.alertId);

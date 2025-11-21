@@ -350,6 +350,62 @@ function PaymentForm({ clientSecret, onSuccess, onCancel, isProcessing, setIsPro
     );
 }
 
+// Subscription Payment Form Component for Realtime Alerts
+function SubscriptionPaymentForm({ clientSecret, onSuccess, onCancel, isProcessing, setIsProcessing }) {
+    const stripe = useStripe();
+    const elements = useElements();
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        
+        if (!stripe || !elements) {
+            return;
+        }
+
+        setIsProcessing(true);
+
+        const { error, paymentIntent } = await stripe.confirmPayment({
+            elements,
+            confirmParams: {
+                return_url: window.location.href,
+            },
+            redirect: 'if_required',
+        });
+
+        if (error) {
+            alert(`Payment failed: ${error.message}`);
+            setIsProcessing(false);
+        } else if (paymentIntent && (paymentIntent.status === 'succeeded' || paymentIntent.status === 'processing')) {
+            onSuccess(paymentIntent.id);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
+                <PaymentElement />
+            </div>
+            <div className="flex gap-3 mt-4">
+                <button
+                    type="submit"
+                    disabled={!stripe || isProcessing}
+                    className="flex-1 bg-indigo-600 dark:bg-indigo-500 text-white py-2.5 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 text-sm"
+                >
+                    {isProcessing ? 'Processing...' : 'Subscribe for $5/month'}
+                </button>
+                <button
+                    type="button"
+                    onClick={onCancel}
+                    disabled={isProcessing}
+                    className="px-4 py-2.5 border border-white/30 dark:border-gray-600 rounded-lg hover:bg-white/10 dark:hover:bg-gray-700 text-white dark:text-gray-300 transition-colors duration-200 disabled:opacity-50 text-sm"
+                >
+                    Cancel
+                </button>
+            </div>
+        </form>
+    );
+}
+
 function App() {
     // Firebase Auth state
     const [user, setUser] = useState(null);
@@ -521,6 +577,8 @@ function App() {
     const [alertFrequency, setAlertFrequency] = useState('weekly'); // daily, weekly, or realtime
     const [alertSubmitting, setAlertSubmitting] = useState(false);
     const [showRealtimeCheckout, setShowRealtimeCheckout] = useState(false);
+    const [realtimeClientSecret, setRealtimeClientSecret] = useState(null);
+    const [realtimeSubscriptionId, setRealtimeSubscriptionId] = useState(null);
     const signupButtonRef = useRef(null);
     const [isEmployerLoggedIn, setIsEmployerLoggedIn] = useState(false);
     const [employerCompany, setEmployerCompany] = useState('');
@@ -4867,76 +4925,100 @@ Questions? support@partnerships-careers.com`;
                                                 <h4 className="text-sm font-semibold text-white">Realtime Alerts - $5/month</h4>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setShowRealtimeCheckout(false)}
+                                                    onClick={() => {
+                                                        setShowRealtimeCheckout(false);
+                                                        setRealtimeClientSecret(null);
+                                                        setRealtimeSubscriptionId(null);
+                                                    }}
                                                     className="text-white/70 hover:text-white"
                                                 >
                                                     ✕
                                                 </button>
                                             </div>
                                             <p className="text-xs text-gray-200 mb-4">Get instant notifications when new partnership jobs are posted. Complete checkout to activate.</p>
-                                            <button
-                                                type="button"
-                                                onClick={async () => {
-                                                    if (!email) return;
-                                                    setAlertSubmitting(true);
-                                                    
-                                                    // Check if we're in local development
-                                                    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-                                                    
-                                                    try {
-                                                        const response = await fetch('/api/create-realtime-checkout', {
-                                                            method: 'POST',
-                                                            headers: { 'Content-Type': 'application/json' },
-                                                            body: JSON.stringify({ email: email })
-                                                        });
+                                            
+                                            {!realtimeClientSecret ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={async () => {
+                                                        if (!email) return;
+                                                        setAlertSubmitting(true);
+                                                        
+                                                        try {
+                                                            const response = await fetch('/api/create-realtime-subscription', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ email: email })
+                                                            });
 
-                                                        // Handle 404 or network errors (API not available locally)
-                                                        if (response.status === 404 || !response.ok) {
-                                                            if (isLocalDev) {
-                                                                throw new Error('API endpoint not available in local development. Please deploy to Vercel to test Stripe checkout, or use Vercel CLI to run serverless functions locally (vercel dev).');
+                                                            let data;
+                                                            const contentType = response.headers.get('content-type');
+                                                            
+                                                            if (contentType && contentType.includes('application/json')) {
+                                                                data = await response.json();
+                                                            } else {
+                                                                const text = await response.text();
+                                                                throw new Error(`Server returned invalid response. Expected JSON but got: ${text.substring(0, 100)}`);
+                                                            }
+
+                                                            if (!response.ok) {
+                                                                throw new Error(data.error || data.message || 'Failed to create subscription');
+                                                            }
+
+                                                            if (!data.clientSecret) {
+                                                                throw new Error('No client secret received from server');
+                                                            }
+
+                                                            setRealtimeClientSecret(data.clientSecret);
+                                                            setRealtimeSubscriptionId(data.subscriptionId);
+                                                        } catch (error) {
+                                                            console.error('Error creating subscription:', error);
+                                                            alert('Error: ' + (error.message || 'Failed to create subscription. Please try again.'));
+                                                        } finally {
+                                                            setAlertSubmitting(false);
+                                                        }
+                                                    }}
+                                                    disabled={alertSubmitting}
+                                                    className="w-full bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    {alertSubmitting ? 'Loading...' : 'Continue to Payment →'}
+                                                </button>
+                                            ) : (
+                                                <Elements 
+                                                    stripe={stripePromise} 
+                                                    options={{ 
+                                                        clientSecret: realtimeClientSecret,
+                                                        appearance: {
+                                                            theme: isDarkMode ? 'night' : 'stripe',
+                                                            variables: {
+                                                                colorPrimary: '#4F46E5',
                                                             }
                                                         }
-
-                                                        let data;
-                                                        const contentType = response.headers.get('content-type');
-                                                        
-                                                        if (contentType && contentType.includes('application/json')) {
-                                                            data = await response.json();
-                                                        } else {
-                                                            const text = await response.text();
-                                                            if (text.includes('<!DOCTYPE') || text.includes('<html')) {
-                                                                throw new Error('API endpoint returned HTML instead of JSON. The serverless function may not be deployed or configured correctly.');
-                                                            }
-                                                            throw new Error(`Server returned invalid response (${contentType || 'unknown type'}). Expected JSON but got: ${text.substring(0, 100)}`);
-                                                        }
-
-                                                        if (!response.ok) {
-                                                            throw new Error(data.error || data.message || 'Failed to create checkout session');
-                                                        }
-
-                                                        if (!data.url) {
-                                                            throw new Error('No checkout URL received from server');
-                                                        }
-
-                                                        // Redirect to Stripe Checkout
-                                                        window.location.href = data.url;
-                                                    } catch (error) {
-                                                        console.error('Error creating checkout:', error);
-                                                        let errorMessage = error.message || 'Failed to create checkout.';
-                                                        
-                                                        if (isLocalDev && errorMessage.includes('404') || errorMessage.includes('not available')) {
-                                                            errorMessage = '⚠️ API endpoints only work when deployed to Vercel.\n\nTo test locally:\n1. Install Vercel CLI: npm i -g vercel\n2. Run: vercel dev\n\nOr deploy to Vercel to test the full checkout flow.';
-                                                        }
-                                                        
-                                                        alert('Error: ' + errorMessage);
-                                                        setAlertSubmitting(false);
-                                                    }
-                                                }}
-                                                disabled={alertSubmitting}
-                                                className="w-full bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                {alertSubmitting ? 'Processing...' : 'Continue to Checkout →'}
-                                            </button>
+                                                    }}
+                                                >
+                                                    <SubscriptionPaymentForm
+                                                        clientSecret={realtimeClientSecret}
+                                                        onSuccess={async (paymentIntentId) => {
+                                                            // Payment succeeded - webhook will activate subscription
+                                                            // Give webhook a moment to process, then show success
+                                                            setTimeout(() => {
+                                                                alert('✅ Successfully subscribed to realtime alerts! You\'ll receive instant notifications when new jobs are posted.');
+                                                                setEmail('');
+                                                                setAlertFrequency('weekly');
+                                                                setShowRealtimeCheckout(false);
+                                                                setRealtimeClientSecret(null);
+                                                                setRealtimeSubscriptionId(null);
+                                                            }, 1000);
+                                                        }}
+                                                        onCancel={() => {
+                                                            setRealtimeClientSecret(null);
+                                                            setRealtimeSubscriptionId(null);
+                                                        }}
+                                                        isProcessing={alertSubmitting}
+                                                        setIsProcessing={setAlertSubmitting}
+                                                    />
+                                                </Elements>
+                                            )}
                                         </div>
                                     )}
                                 </div>
