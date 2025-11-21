@@ -1,21 +1,10 @@
 // Vercel Serverless Function to handle Stripe Webhooks
 import Stripe from 'stripe';
 import admin from 'firebase-admin';
+import { getFirestore, initializeFirebaseAdmin } from './firebase-admin-init.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-// Initialize Firebase Admin (only once)
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-
-const db = admin.firestore();
+const db = getFirestore();
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {

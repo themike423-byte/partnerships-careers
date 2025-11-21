@@ -1,20 +1,9 @@
 // Vercel Serverless Function to update job alert frequency
 import { Resend } from 'resend';
 import Stripe from 'stripe';
-import admin from 'firebase-admin';
+import { getFirestore } from './firebase-admin-init.js';
 
-// Initialize Firebase Admin (only once)
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-
-const db = admin.firestore();
+const db = getFirestore();
 const resend = new Resend(process.env.RESEND_API_KEY);
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
