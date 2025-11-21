@@ -31,18 +31,60 @@ export default async function handler(req, res) {
         console.log('Payment intent succeeded:', paymentIntent.id);
         
         // Handle subscription payment intents for realtime alerts
-        if (paymentIntent.metadata && paymentIntent.metadata.type === 'realtime_alerts' && paymentIntent.metadata.alertId) {
+        if (paymentIntent.metadata && (
+          paymentIntent.metadata.type === 'realtime_alerts' || 
+          paymentIntent.metadata.type === 'realtime_alerts_subscription'
+        ) && paymentIntent.metadata.alertId) {
           try {
             const alertRef = db.collection('jobAlerts').doc(paymentIntent.metadata.alertId);
             const alertDoc = await alertRef.get();
             
             if (alertDoc.exists) {
+              // If this is a standalone payment intent for a subscription invoice,
+              // we need to attach the payment method to the subscription and pay the invoice
+              if (paymentIntent.metadata.type === 'realtime_alerts_subscription' && paymentIntent.metadata.subscriptionId && paymentIntent.metadata.invoiceId) {
+                try {
+                  const subscription = await stripe.subscriptions.retrieve(paymentIntent.metadata.subscriptionId);
+                  const invoice = await stripe.invoices.retrieve(paymentIntent.metadata.invoiceId);
+                  
+                  // Attach the payment method to the customer if not already attached
+                  if (paymentIntent.payment_method) {
+                    await stripe.paymentMethods.attach(paymentIntent.payment_method, {
+                      customer: paymentIntent.customer
+                    });
+                    
+                    // Set as default payment method for the customer
+                    await stripe.customers.update(paymentIntent.customer, {
+                      invoice_settings: {
+                        default_payment_method: paymentIntent.payment_method
+                      }
+                    });
+                    
+                    // Update subscription to use this payment method
+                    await stripe.subscriptions.update(paymentIntent.metadata.subscriptionId, {
+                      default_payment_method: paymentIntent.payment_method
+                    });
+                    
+                    // Pay the invoice if it's still open
+                    if (invoice.status === 'open' && !invoice.paid) {
+                      await stripe.invoices.pay(invoice.id, {
+                        payment_method: paymentIntent.payment_method
+                      });
+                    }
+                  }
+                } catch (subscriptionError) {
+                  console.error('Error updating subscription after payment:', subscriptionError);
+                  // Continue to update alert even if subscription update fails
+                }
+              }
+              
               await alertRef.update({
                 frequency: 'realtime',
                 isActive: true,
                 paymentPending: false,
                 stripeCustomerId: paymentIntent.customer,
                 stripePaymentIntentId: paymentIntent.id,
+                stripeSubscriptionId: paymentIntent.metadata?.subscriptionId || null,
                 updatedAt: new Date().toISOString()
               });
               console.log(`Realtime alert ${paymentIntent.metadata.alertId} activated after payment`);

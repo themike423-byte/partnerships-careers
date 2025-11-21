@@ -103,7 +103,7 @@ export default async function handler(req, res) {
         save_default_payment_method: 'on_subscription',
         payment_method_types: ['card']
       },
-      expand: ['latest_invoice.payment_intent'],
+      expand: ['latest_invoice.payment_intent', 'pending_setup_intent'],
       metadata: {
         type: 'realtime_alerts',
         email: normalizedEmail,
@@ -114,7 +114,8 @@ export default async function handler(req, res) {
     console.log('Subscription created:', {
       id: subscription.id,
       status: subscription.status,
-      latest_invoice: subscription.latest_invoice ? (typeof subscription.latest_invoice === 'string' ? subscription.latest_invoice : subscription.latest_invoice.id) : 'none'
+      latest_invoice: subscription.latest_invoice ? (typeof subscription.latest_invoice === 'string' ? subscription.latest_invoice : subscription.latest_invoice.id) : 'none',
+      pending_setup_intent: subscription.pending_setup_intent ? (typeof subscription.pending_setup_intent === 'string' ? subscription.pending_setup_intent : subscription.pending_setup_intent.id) : 'none'
     });
 
     // Get the invoice - it should be expanded already
@@ -132,6 +133,7 @@ export default async function handler(req, res) {
     console.log('Invoice details:', {
       id: invoice.id,
       status: invoice.status,
+      amount_due: invoice.amount_due,
       payment_intent: invoice.payment_intent ? (typeof invoice.payment_intent === 'string' ? invoice.payment_intent : invoice.payment_intent.id) : 'none',
       payment_intent_type: typeof invoice.payment_intent
     });
@@ -139,22 +141,43 @@ export default async function handler(req, res) {
     // Get the payment intent
     let paymentIntent;
     if (!invoice.payment_intent) {
-      // If there's no payment intent, the invoice might need to be finalized
-      // But for subscriptions with default_incomplete, the payment intent should exist
-      throw new Error(`Invoice ${invoice.id} has no payment intent. Invoice status: ${invoice.status}. This usually means the subscription creation failed or the invoice is in an unexpected state.`);
-    }
-
-    if (typeof invoice.payment_intent === 'string') {
-      // Payment intent is just an ID, retrieve it
-      paymentIntent = await stripe.paymentIntents.retrieve(invoice.payment_intent);
+      // For subscriptions with default_incomplete, if there's no payment intent on the invoice,
+      // we need to pay the invoice which will create a payment intent
+      // But we can't pay without a payment method, so we'll create a payment intent for the invoice
+      console.log('No payment intent on invoice, creating payment intent for invoice amount...');
+      
+      // Create a payment intent for the invoice amount
+      // This will be used with Payment Element to collect payment method
+      paymentIntent = await stripe.paymentIntents.create({
+        amount: invoice.amount_due,
+        currency: invoice.currency || 'usd',
+        customer: customerId,
+        payment_method_types: ['card'],
+        metadata: {
+          type: 'realtime_alerts_subscription',
+          email: normalizedEmail,
+          alertId: alertId,
+          subscriptionId: subscription.id,
+          invoiceId: invoice.id
+        },
+        // Set up automatic payment for future invoices
+        setup_future_usage: 'off_session'
+      });
+      
+      console.log('Created standalone payment intent for subscription invoice:', paymentIntent.id);
     } else {
-      // Payment intent is already expanded
-      paymentIntent = invoice.payment_intent;
+      // Payment intent exists, retrieve it
+      if (typeof invoice.payment_intent === 'string') {
+        paymentIntent = await stripe.paymentIntents.retrieve(invoice.payment_intent);
+      } else {
+        paymentIntent = invoice.payment_intent;
+      }
     }
 
     console.log('Payment intent details:', {
       id: paymentIntent.id,
       status: paymentIntent.status,
+      amount: paymentIntent.amount,
       hasClientSecret: !!paymentIntent.client_secret
     });
 
