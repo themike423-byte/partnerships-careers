@@ -1,8 +1,7 @@
 // Vercel Serverless Function to create Stripe Subscription Payment Intent for embedded checkout
 import Stripe from 'stripe';
-import { getFirestore } from './firebase-admin-init.js';
+import { getFirestore, initializeFirebaseAdmin } from './firebase-admin-init.js';
 
-const db = getFirestore();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export default async function handler(req, res) {
@@ -21,6 +20,10 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Initialize Firebase Admin
+    initializeFirebaseAdmin();
+    const db = getFirestore();
+
     const { email } = req.body;
 
     if (!email) {
@@ -107,8 +110,22 @@ export default async function handler(req, res) {
       }
     });
 
-    const invoice = subscription.latest_invoice;
-    const paymentIntent = invoice.payment_intent;
+    // Get the invoice and payment intent
+    let invoice;
+    if (typeof subscription.latest_invoice === 'string') {
+      invoice = await stripe.invoices.retrieve(subscription.latest_invoice, {
+        expand: ['payment_intent']
+      });
+    } else {
+      invoice = subscription.latest_invoice;
+    }
+
+    let paymentIntent;
+    if (typeof invoice.payment_intent === 'string') {
+      paymentIntent = await stripe.paymentIntents.retrieve(invoice.payment_intent);
+    } else {
+      paymentIntent = invoice.payment_intent;
+    }
 
     if (!paymentIntent || !paymentIntent.client_secret) {
       throw new Error('Failed to create payment intent for subscription');
