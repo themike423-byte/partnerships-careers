@@ -63,6 +63,16 @@ export default async function handler(req, res) {
 
     // Get price ID from environment variable or use default
     const priceId = process.env.STRIPE_REALTIME_ALERTS_PRICE_ID || 'price_1SW0FACaW2Du37V1Xwv0hG6w';
+    
+    // Validate Stripe key exists
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error('STRIPE_SECRET_KEY environment variable is not set');
+    }
+    
+    // Validate price ID format
+    if (!priceId.startsWith('price_')) {
+      throw new Error(`Invalid Stripe price ID format: ${priceId}`);
+    }
 
     // Create Stripe Checkout Session for subscription
     const session = await stripe.checkout.sessions.create({
@@ -95,9 +105,16 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Error creating checkout session:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Environment check:', {
+      hasStripeKey: !!process.env.STRIPE_SECRET_KEY,
+      hasFirebase: !!process.env.FIREBASE_PROJECT_ID,
+      priceId: process.env.STRIPE_REALTIME_ALERTS_PRICE_ID || 'price_1SW0FACaW2Du37V1Xwv0hG6w'
+    });
     return res.status(500).json({ 
       error: 'Failed to create checkout session', 
-      message: error.message 
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
