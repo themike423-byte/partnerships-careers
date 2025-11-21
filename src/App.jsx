@@ -2584,6 +2584,7 @@ Questions? support@partnerships-careers.com`;
                     type: 'new',
                     employerId: user?.uid || 'unknown',
                     company: employerCompany,
+                    email: user?.email || '', // Pass email for admin whitelist check
                 }),
             });
 
