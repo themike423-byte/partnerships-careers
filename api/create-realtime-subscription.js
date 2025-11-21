@@ -152,7 +152,6 @@ export default async function handler(req, res) {
         amount: invoice.amount_due,
         currency: invoice.currency || 'usd',
         customer: customerId,
-        payment_method_types: ['card', 'link'],
         metadata: {
           type: 'realtime_alerts_subscription',
           email: normalizedEmail,
@@ -162,7 +161,7 @@ export default async function handler(req, res) {
         },
         // Set up automatic payment for future invoices
         setup_future_usage: 'off_session',
-        // For test mode, use automatic payment methods to avoid 3DS issues
+        // Use automatic payment methods (includes card, link, etc.)
         automatic_payment_methods: {
           enabled: true,
           allow_redirects: 'never' // Prefer inline authentication
