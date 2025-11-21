@@ -52,6 +52,12 @@ SITE_URL = https://your-vercel-url.vercel.app
 STRIPE_WEBHOOK_SECRET = whsec_... (from Stripe webhook setup)
 ```
 
+#### Hugging Face AI (For Job Parsing)
+```
+HUGGINGFACE_API_KEY = hf_... (your Hugging Face access token)
+HUGGINGFACE_MODEL = mistralai/Mistral-7B-Instruct-v0.2 (optional - defaults to Mistral)
+```
+
 ---
 
 ## How to Get Each Value
@@ -79,6 +85,18 @@ STRIPE_WEBHOOK_SECRET = whsec_... (from Stripe webhook setup)
 2. Copy that URL and set as `SITE_URL`
 3. Example: `https://partnerships-careers-abc123.vercel.app`
 
+### Hugging Face API Key
+
+1. Go to [Hugging Face Settings](https://huggingface.co/settings/tokens)
+2. Click "New token"
+3. Give it a name (e.g., "Partnerships Careers")
+4. Select "Read" access (or "Write" if you need to use private models)
+5. Click "Generate token"
+6. Copy the token (starts with `hf_`)
+7. Add to Vercel as `HUGGINGFACE_API_KEY`
+
+**Note:** The default model is `mistralai/Mistral-7B-Instruct-v0.2`. You can change it by setting `HUGGINGFACE_MODEL` to any compatible model on Hugging Face.
+
 ---
 
 ## Important Notes
@@ -105,5 +123,7 @@ VITE_LINKEDIN_CLIENT_ID=7719ehan5tequ0
 LINKEDIN_CLIENT_SECRET=
 SITE_URL=
 STRIPE_WEBHOOK_SECRET=
+HUGGINGFACE_API_KEY=
+HUGGINGFACE_MODEL=mistralai/Mistral-7B-Instruct-v0.2
 ```
 

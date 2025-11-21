@@ -10,12 +10,12 @@
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.9.0",
+    "@huggingface/inference": "^4.13.3",
     "@stripe/react-stripe-js": "^5.4.0",
     "@stripe/stripe-js": "^8.5.2",
     "@twicpics/components": "^0.33.0",
     "firebase": "^10.7.1",
     "firebase-admin": "^12.7.0",
-    "openai": "^6.9.1",
     "pdf-parse": "^2.4.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

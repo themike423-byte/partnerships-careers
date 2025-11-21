@@ -1,9 +1,11 @@
-// Vercel Serverless Function to parse job listing from URL using AI
-import OpenAI from 'openai';
+// Vercel Serverless Function to parse job listing from URL using Hugging Face AI
+import { HfInference } from '@huggingface/inference';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+
+// Use a good instruction-following model for structured extraction
+// Options: mistralai/Mistral-7B-Instruct-v0.2, meta-llama/Llama-2-7b-chat-hf, or google/flan-t5-xxl
+const MODEL_NAME = process.env.HUGGINGFACE_MODEL || 'mistralai/Mistral-7B-Instruct-v0.2';
 
 export default async function handler(req, res) {
   // Enable CORS
@@ -35,10 +37,10 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid URL format' });
     }
 
-    // Check if OpenAI API key is configured
-    if (!process.env.OPENAI_API_KEY) {
+    // Check if Hugging Face API key is configured
+    if (!process.env.HUGGINGFACE_API_KEY) {
       return res.status(500).json({ 
-        error: 'AI parsing not configured. Please add OPENAI_API_KEY to environment variables.' 
+        error: 'AI parsing not configured. Please add HUGGINGFACE_API_KEY to environment variables.' 
       });
     }
 
@@ -64,9 +66,9 @@ export default async function handler(req, res) {
       .replace(/\s+/g, ' ')
       .trim();
 
-    // Limit text length to avoid token limits (keep first 8000 characters)
-    if (textContent.length > 8000) {
-      textContent = textContent.substring(0, 8000) + '...';
+    // Limit text length to avoid token limits (keep first 6000 characters for Hugging Face)
+    if (textContent.length > 6000) {
+      textContent = textContent.substring(0, 6000) + '...';
     }
 
     if (!textContent || textContent.length < 100) {
@@ -77,7 +79,7 @@ export default async function handler(req, res) {
 
     console.log('Extracted text content length:', textContent.length);
 
-    // Use OpenAI to extract structured job data
+    // Use Hugging Face to extract structured job data
     const prompt = `You are a job listing parser. Extract structured data from the following job listing content. Return ONLY a valid JSON object with these exact fields (use empty strings or null for missing data):
 
 {
@@ -104,24 +106,21 @@ ${textContent}
 
 Return ONLY the JSON object, no other text.`;
 
-    console.log('Sending to OpenAI for parsing...');
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini', // Using mini for cost efficiency, can upgrade to gpt-4 if needed
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a job listing parser. Extract structured data and return ONLY valid JSON, no explanations.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.3, // Lower temperature for more consistent extraction
-      response_format: { type: 'json_object' } // Force JSON response
+    console.log('Sending to Hugging Face for parsing...');
+    
+    // Use textGeneration for instruction-following models
+    const response = await hf.textGeneration({
+      model: MODEL_NAME,
+      inputs: prompt,
+      parameters: {
+        max_new_tokens: 1000,
+        temperature: 0.3,
+        return_full_text: false,
+        do_sample: true,
+      },
     });
 
-    const aiResponse = completion.choices[0]?.message?.content;
+    const aiResponse = response.generated_text?.trim();
     
     if (!aiResponse) {
       throw new Error('No response from AI');
@@ -129,18 +128,24 @@ Return ONLY the JSON object, no other text.`;
 
     console.log('AI Response:', aiResponse);
 
-    // Parse the JSON response
+    // Parse the JSON response - try to extract JSON from the response
     let parsedData;
     try {
+      // Try parsing directly
       parsedData = JSON.parse(aiResponse);
     } catch (parseError) {
-      console.error('Failed to parse AI response as JSON:', aiResponse);
-      // Try to extract JSON from the response if it's wrapped in markdown or text
+      // Try to extract JSON from markdown code blocks or text
       const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        parsedData = JSON.parse(jsonMatch[0]);
+        try {
+          parsedData = JSON.parse(jsonMatch[0]);
+        } catch (e) {
+          console.error('Failed to parse extracted JSON:', jsonMatch[0]);
+          throw new Error('AI response is not valid JSON');
+        }
       } else {
-        throw new Error('AI response is not valid JSON');
+        console.error('No JSON found in AI response:', aiResponse);
+        throw new Error('AI response does not contain valid JSON');
       }
     }
 
@@ -157,6 +162,17 @@ Return ONLY the JSON object, no other text.`;
     parsedData.isRemote = parsedData.isRemote || false;
     parsedData.hasEquity = parsedData.hasEquity || false;
     parsedData.hasVisa = parsedData.hasVisa || false;
+
+    // Ensure boolean fields are actually booleans
+    if (typeof parsedData.isRemote === 'string') {
+      parsedData.isRemote = parsedData.isRemote.toLowerCase() === 'true';
+    }
+    if (typeof parsedData.hasEquity === 'string') {
+      parsedData.hasEquity = parsedData.hasEquity.toLowerCase() === 'true';
+    }
+    if (typeof parsedData.hasVisa === 'string') {
+      parsedData.hasVisa = parsedData.hasVisa.toLowerCase() === 'true';
+    }
 
     console.log('Parsed data:', parsedData);
 
