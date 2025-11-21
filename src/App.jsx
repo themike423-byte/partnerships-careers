@@ -416,11 +416,21 @@ function SubscriptionPaymentForm({ clientSecret, onSuccess, onCancel, isProcessi
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
                 <PaymentElement 
                     options={{
-                        layout: 'tabs',
+                        layout: {
+                            type: 'tabs',
+                            defaultCollapsed: false
+                        },
                         paymentMethodOrder: ['card', 'link'],
                         wallets: {
                             applePay: 'never',
                             googlePay: 'never'
+                        },
+                        fields: {
+                            billingDetails: 'never' // Hide billing details for cleaner UI
+                        },
+                        // Ensure card input is always available and visible
+                        business: {
+                            name: 'Partnerships Careers'
                         }
                     }}
                 />
@@ -5044,7 +5054,8 @@ Questions? support@partnerships-careers.com`;
                                                                 colorPrimary: '#4F46E5',
                                                             }
                                                         },
-                                                        loader: 'auto'
+                                                        loader: 'auto',
+                                                        locale: 'en'
                                                     }}
                                                 >
                                                     <SubscriptionPaymentForm
