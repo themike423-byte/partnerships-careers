@@ -37,3 +37,4 @@ serviceAccountKey.json
 # OS
 Thumbs.db
 
+.vercel
