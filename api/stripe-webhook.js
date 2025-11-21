@@ -1,6 +1,8 @@
 // Vercel Serverless Function to handle Stripe Webhooks
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const admin = require('firebase-admin');
+import Stripe from 'stripe';
+import admin from 'firebase-admin';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // Initialize Firebase Admin (only once)
 if (!admin.apps.length) {
@@ -15,7 +17,7 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

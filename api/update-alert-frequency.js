@@ -1,7 +1,7 @@
 // Vercel Serverless Function to update job alert frequency
-const { Resend } = require('resend');
-const Stripe = require('stripe');
-const admin = require('firebase-admin');
+import { Resend } from 'resend';
+import Stripe from 'stripe';
+import admin from 'firebase-admin';
 
 // Initialize Firebase Admin (only once)
 if (!admin.apps.length) {
@@ -18,7 +18,7 @@ const db = admin.firestore();
 const resend = new Resend(process.env.RESEND_API_KEY);
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');

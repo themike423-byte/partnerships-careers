@@ -1,6 +1,6 @@
 // Vercel Serverless Function to handle unsubscribes
-const admin = require('firebase-admin');
-const Stripe = require('stripe');
+import admin from 'firebase-admin';
+import Stripe from 'stripe';
 
 // Initialize Firebase Admin (only once)
 if (!admin.apps.length) {
@@ -16,7 +16,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method === 'GET') {
     // Handle unsubscribe via token
     const { token } = req.query;

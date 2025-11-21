@@ -1,6 +1,6 @@
 // Vercel Serverless Function to create Stripe Checkout Session for realtime alerts
-const Stripe = require('stripe');
-const admin = require('firebase-admin');
+import Stripe from 'stripe';
+import admin from 'firebase-admin';
 
 // Initialize Firebase Admin (only once)
 if (!admin.apps.length) {
@@ -16,7 +16,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
