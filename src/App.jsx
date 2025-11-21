@@ -765,6 +765,9 @@ function App() {
     const [jobUrlInput, setJobUrlInput] = useState('');
     const [jobFileInput, setJobFileInput] = useState(null);
     const [isParsingJob, setIsParsingJob] = useState(false);
+    const [parsedJobDataEscrow, setParsedJobDataEscrow] = useState(null); // Hold AI-parsed data until payment
+    const [editingJobId, setEditingJobId] = useState(null); // Track which job is being edited
+    const [editJobData, setEditJobData] = useState(null); // Data for editing existing job
     const [linkedinAuthLoading, setLinkedinAuthLoading] = useState(false);
     const [showRequestAccessModal, setShowRequestAccessModal] = useState(false);
     const [existingCompanyInfo, setExistingCompanyInfo] = useState(null);
@@ -2608,7 +2611,68 @@ Questions? support@partnerships-careers.com`;
     const handleSubmitNewJob = async (e) => {
         e.preventDefault();
         
-        if (!newJobData.title || !newJobData.location || !newJobData.description || !newJobData.link) {
+        // Helper to get current field value
+        const getFieldValue = (field) => {
+            return (editingJobId && editJobData) ? (editJobData[field] || '') : (newJobData[field] || '');
+        };
+        
+        // If editing existing job, update it instead of creating new one
+        if (editingJobId) {
+            try {
+                const jobRef = doc(db, 'jobs', editingJobId);
+                await updateDoc(jobRef, {
+                    title: getFieldValue('title'),
+                    company: getFieldValue('company') || employerCompany,
+                    location: getFieldValue('location'),
+                    type: getFieldValue('type'),
+                    level: getFieldValue('level'),
+                    category: getFieldValue('category'),
+                    region: getFieldValue('region'),
+                    description: getFieldValue('description'),
+                    link: getFieldValue('link'),
+                    salaryRange: getFieldValue('salaryRange') || '',
+                    companyLogo: getFieldValue('companyLogo') || '',
+                    companyStage: getFieldValue('companyStage') || '',
+                    companySize: getFieldValue('companySize') || '',
+                    isRemote: getFieldValue('isRemote') || false,
+                    hasEquity: getFieldValue('hasEquity') || false,
+                    hasVisa: getFieldValue('hasVisa') || false,
+                    updatedAt: new Date().toISOString()
+                });
+                
+                alert('✅ Job updated successfully!');
+                setEditingJobId(null);
+                setEditJobData(null);
+                setShowJobForm(false);
+                setJobUploadMethod(null);
+                setNewJobData({
+                    title: '',
+                    company: '',
+                    location: '',
+                    type: 'Full-Time',
+                    level: 'Manager',
+                    category: 'Channel & Reseller',
+                    region: 'NAmer',
+                    description: '',
+                    link: '',
+                    salaryRange: '',
+                    companyLogo: '',
+                    companyStage: '',
+                    companySize: '',
+                    isRemote: false,
+                    hasEquity: false,
+                    hasVisa: false
+                });
+                fetchJobs();
+                return;
+            } catch (error) {
+                console.error('Error updating job:', error);
+                alert('Error updating job: ' + error.message);
+                return;
+            }
+        }
+        
+        if (!getFieldValue('title') || !getFieldValue('location') || !getFieldValue('description') || !getFieldValue('link')) {
             alert('Please fill out all required fields');
             return;
         }
@@ -2641,32 +2705,37 @@ Questions? support@partnerships-careers.com`;
             const expiryDate = new Date();
             expiryDate.setDate(expiryDate.getDate() + 30);
             
+            // Helper to get current field value
+            const getFieldValue = (field) => {
+                return (editingJobId && editJobData) ? editJobData[field] : newJobData[field];
+            };
+            
             // Prepare job data (don't post yet - wait for payment)
             const jobData = {
-                title: newJobData.title,
+                title: getFieldValue('title'),
                 company: companyName,
-                location: newJobData.location,
-                type: newJobData.type,
-                salaryRange: newJobData.salaryRange || 'Competitive',
-                level: newJobData.level,
-                category: newJobData.category,
-                region: newJobData.region,
-                description: newJobData.description,
+                location: getFieldValue('location'),
+                type: getFieldValue('type'),
+                salaryRange: getFieldValue('salaryRange') || 'Competitive',
+                level: getFieldValue('level'),
+                category: getFieldValue('category'),
+                region: getFieldValue('region'),
+                description: getFieldValue('description'),
                 postedDate: new Date().toISOString(),
                 isFeatured: true,
                 companyId: companyData?.id || '',
-                link: newJobData.link,
+                link: getFieldValue('link'),
                 featuredExpiryDate: expiryDate.toISOString(),
                 learnMoreClicks: 0,
                 totalClicks: 0,
                 status: 'active',
                 createdAt: new Date().toISOString(),
                 companyLogo: companyLogo,
-                companyStage: newJobData.companyStage || '',
-                companySize: newJobData.companySize || '',
-                isRemote: newJobData.isRemote || false,
-                hasEquity: newJobData.hasEquity || false,
-                hasVisa: newJobData.hasVisa || false,
+                companyStage: getFieldValue('companyStage') || '',
+                companySize: getFieldValue('companySize') || '',
+                isRemote: getFieldValue('isRemote') || false,
+                hasEquity: getFieldValue('hasEquity') || false,
+                hasVisa: getFieldValue('hasVisa') || false,
                 applicantCount: 0
             };
 
@@ -2701,7 +2770,7 @@ Questions? support@partnerships-careers.com`;
         }
     };
 
-    // Parse job from URL using AI
+    // Parse job from URL using AI - auto-extract and proceed to payment
     const handleParseJobUrl = async () => {
         if (!jobUrlInput) {
             alert('Please enter a job listing URL');
@@ -2723,29 +2792,125 @@ Questions? support@partnerships-careers.com`;
             
             const parsedData = await response.json();
             
-            // Populate form with parsed data
-            setNewJobData({
-                title: parsedData.title || '',
-                company: parsedData.company || employerCompany || '',
-                location: parsedData.location || '',
+            // Validate required fields - check for empty strings, null, or undefined
+            const missingFields = [];
+            if (!parsedData.title || parsedData.title.trim() === '') missingFields.push('title');
+            if (!parsedData.location || parsedData.location.trim() === '') missingFields.push('location');
+            if (!parsedData.description || parsedData.description.trim() === '') missingFields.push('description');
+            if (!parsedData.link || parsedData.link.trim() === '') {
+                // Use the input URL as fallback
+                parsedData.link = jobUrlInput;
+            }
+            
+            if (missingFields.length > 0) {
+                console.warn('Missing required fields:', missingFields);
+                console.log('Parsed data received:', parsedData);
+                alert(`⚠️ AI could not extract all required fields (${missingFields.join(', ')}). Please fill in the missing information manually.`);
+                // Still populate what we have
+                setNewJobData({
+                    title: parsedData.title || '',
+                    company: parsedData.company || employerCompany || '',
+                    location: parsedData.location || '',
+                    type: parsedData.type || 'Full-Time',
+                    level: parsedData.level || 'Manager',
+                    category: parsedData.category || 'Channel & Reseller',
+                    region: parsedData.region || 'NAmer',
+                    description: parsedData.description || '',
+                    link: parsedData.link || jobUrlInput,
+                    salaryRange: parsedData.salaryRange || '',
+                    companyLogo: parsedData.companyLogo || '',
+                    companyStage: parsedData.companyStage || '',
+                    companySize: parsedData.companySize || '',
+                    isRemote: parsedData.isRemote || false,
+                    hasEquity: parsedData.hasEquity || false,
+                    hasVisa: parsedData.hasVisa || false
+                });
+                setJobUploadMethod('manual');
+                setIsParsingJob(false);
+                return;
+            }
+            
+            // All required fields extracted - proceed directly to payment
+            const companyName = parsedData.company || employerCompany;
+            
+            // Fetch company logo if not provided
+            let companyLogo = parsedData.companyLogo || '';
+            if (!companyLogo && companyName) {
+                companyLogo = await fetchCompanyLogo(companyName);
+            }
+            
+            // Calculate featured expiry date (30 days from now)
+            const expiryDate = new Date();
+            expiryDate.setDate(expiryDate.getDate() + 30);
+            
+            // Prepare complete job data for escrow
+            const completeJobData = {
+                title: parsedData.title,
+                company: companyName,
+                location: parsedData.location,
                 type: parsedData.type || 'Full-Time',
+                salaryRange: parsedData.salaryRange || 'Competitive',
                 level: parsedData.level || 'Manager',
                 category: parsedData.category || 'Channel & Reseller',
                 region: parsedData.region || 'NAmer',
-                description: parsedData.description || '',
+                description: parsedData.description,
+                postedDate: new Date().toISOString(),
+                isFeatured: true,
+                companyId: companyData?.id || '',
                 link: parsedData.link || jobUrlInput,
-                salaryRange: parsedData.salaryRange || '',
-                companyLogo: parsedData.companyLogo || '',
+                featuredExpiryDate: expiryDate.toISOString(),
+                learnMoreClicks: 0,
+                totalClicks: 0,
+                status: 'active',
+                createdAt: new Date().toISOString(),
+                companyLogo: companyLogo,
                 companyStage: parsedData.companyStage || '',
                 companySize: parsedData.companySize || '',
                 isRemote: parsedData.isRemote || false,
                 hasEquity: parsedData.hasEquity || false,
-                hasVisa: parsedData.hasVisa || false
-            });
+                hasVisa: parsedData.hasVisa || false,
+                applicantCount: 0
+            };
             
-            // Switch to manual view to show populated form
-            setJobUploadMethod('manual');
-            alert('✅ Job details extracted successfully! Please review and complete the form.');
+            // Store in escrow
+            setParsedJobDataEscrow(completeJobData);
+            setPendingJobData(completeJobData);
+            
+            // Development mode: Skip payment on localhost
+            const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            
+            if (isLocalhost) {
+                // Skip payment in development - post directly
+                console.log('Development mode: Skipping payment, posting job directly');
+                await postJobToFirestore(completeJobData);
+                setIsParsingJob(false);
+                return;
+            }
+            
+            // Create payment intent
+            const paymentResponse = await fetch('/api/create-payment-intent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jobData: completeJobData,
+                    employerId: user?.uid || 'unknown',
+                }),
+            });
+
+            if (!paymentResponse.ok) {
+                const errorData = await paymentResponse.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error(errorData.error || 'Failed to create payment intent');
+            }
+
+            const { clientSecret, paymentIntentId } = await paymentResponse.json();
+            
+            // Show payment form
+            setPaymentClientSecret(clientSecret);
+            setPaymentIntentId(paymentIntentId);
+            setShowPaymentForm(true);
+            setJobUploadMethod(null); // Hide URL input, show payment
+            
+            alert('✅ Job details extracted successfully! Please complete payment to post your featured job.');
         } catch (error) {
             console.error('Error parsing job URL:', error);
             alert('Error parsing job URL: ' + error.message);
@@ -2786,29 +2951,114 @@ Questions? support@partnerships-careers.com`;
                     
                     const parsedData = await response.json();
                     
-                    // Populate form with parsed data
-                    setNewJobData({
-                        title: parsedData.title || '',
-                        company: parsedData.company || employerCompany || '',
-                        location: parsedData.location || '',
+                    // Validate required fields
+                    if (!parsedData.title || !parsedData.location || !parsedData.description || !parsedData.link) {
+                        alert('⚠️ AI could not extract all required fields. Please fill in the missing information manually.');
+                        // Still populate what we have
+                        setNewJobData({
+                            title: parsedData.title || '',
+                            company: parsedData.company || employerCompany || '',
+                            location: parsedData.location || '',
+                            type: parsedData.type || 'Full-Time',
+                            level: parsedData.level || 'Manager',
+                            category: parsedData.category || 'Channel & Reseller',
+                            region: parsedData.region || 'NAmer',
+                            description: parsedData.description || '',
+                            link: parsedData.link || '',
+                            salaryRange: parsedData.salaryRange || '',
+                            companyLogo: parsedData.companyLogo || '',
+                            companyStage: parsedData.companyStage || '',
+                            companySize: parsedData.companySize || '',
+                            isRemote: parsedData.isRemote || false,
+                            hasEquity: parsedData.hasEquity || false,
+                            hasVisa: parsedData.hasVisa || false
+                        });
+                        setJobUploadMethod('manual');
+                        setIsParsingJob(false);
+                        return;
+                    }
+                    
+                    // All required fields extracted - proceed directly to payment
+                    const companyName = parsedData.company || employerCompany;
+                    
+                    // Fetch company logo if not provided
+                    let companyLogo = parsedData.companyLogo || '';
+                    if (!companyLogo && companyName) {
+                        companyLogo = await fetchCompanyLogo(companyName);
+                    }
+                    
+                    // Calculate featured expiry date (30 days from now)
+                    const expiryDate = new Date();
+                    expiryDate.setDate(expiryDate.getDate() + 30);
+                    
+                    // Prepare complete job data for escrow
+                    const completeJobData = {
+                        title: parsedData.title,
+                        company: companyName,
+                        location: parsedData.location,
                         type: parsedData.type || 'Full-Time',
+                        salaryRange: parsedData.salaryRange || 'Competitive',
                         level: parsedData.level || 'Manager',
                         category: parsedData.category || 'Channel & Reseller',
                         region: parsedData.region || 'NAmer',
-                        description: parsedData.description || '',
+                        description: parsedData.description,
+                        postedDate: new Date().toISOString(),
+                        isFeatured: true,
+                        companyId: companyData?.id || '',
                         link: parsedData.link || '',
-                        salaryRange: parsedData.salaryRange || '',
-                        companyLogo: parsedData.companyLogo || '',
+                        featuredExpiryDate: expiryDate.toISOString(),
+                        learnMoreClicks: 0,
+                        totalClicks: 0,
+                        status: 'active',
+                        createdAt: new Date().toISOString(),
+                        companyLogo: companyLogo,
                         companyStage: parsedData.companyStage || '',
                         companySize: parsedData.companySize || '',
                         isRemote: parsedData.isRemote || false,
                         hasEquity: parsedData.hasEquity || false,
-                        hasVisa: parsedData.hasVisa || false
-                    });
+                        hasVisa: parsedData.hasVisa || false,
+                        applicantCount: 0
+                    };
                     
-                    // Switch to manual view to show populated form
-                    setJobUploadMethod('manual');
-                    alert('✅ Job details extracted successfully! Please review and complete the form.');
+                    // Store in escrow
+                    setParsedJobDataEscrow(completeJobData);
+                    setPendingJobData(completeJobData);
+                    
+                    // Development mode: Skip payment on localhost
+                    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                    
+                    if (isLocalhost) {
+                        // Skip payment in development - post directly
+                        console.log('Development mode: Skipping payment, posting job directly');
+                        await postJobToFirestore(completeJobData);
+                        setIsParsingJob(false);
+                        return;
+                    }
+                    
+                    // Create payment intent
+                    const paymentResponse = await fetch('/api/create-payment-intent', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            jobData: completeJobData,
+                            employerId: user?.uid || 'unknown',
+                        }),
+                    });
+
+                    if (!paymentResponse.ok) {
+                        const errorData = await paymentResponse.json().catch(() => ({ error: 'Unknown error' }));
+                        throw new Error(errorData.error || 'Failed to create payment intent');
+                    }
+
+                    const { clientSecret, paymentIntentId } = await paymentResponse.json();
+                    
+                    // Show payment form
+                    setPaymentClientSecret(clientSecret);
+                    setPaymentIntentId(paymentIntentId);
+                    setShowPaymentForm(true);
+                    setJobUploadMethod(null); // Hide file input, show payment
+                    
+                    alert('✅ Job details extracted successfully! Please complete payment to post your featured job.');
                     setIsParsingJob(false);
                 } catch (error) {
                     console.error('Error parsing job file:', error);
@@ -2884,7 +3134,56 @@ Questions? support@partnerships-careers.com`;
     // Handle successful payment
     const handlePaymentSuccess = async (paymentIntentId) => {
         try {
-            // Verify payment via API
+            // Use escrowed data if available (from AI parsing), otherwise use pendingJobData
+            const jobDataToPost = parsedJobDataEscrow || pendingJobData;
+            
+            if (jobDataToPost) {
+                // Use escrowed/pending data directly
+                const jobToPost = {
+                    ...jobDataToPost,
+                    postedBy: user?.uid || 'unknown',
+                    paymentIntentId: paymentIntentId,
+                    paidAt: new Date().toISOString(),
+                };
+
+                const jobsRef = collection(db, 'jobs');
+                await addDoc(jobsRef, jobToPost);
+
+                alert('🎉 Payment successful! Your featured job has been posted!');
+                
+                // Reset everything
+                setShowJobForm(false);
+                setShowPaymentForm(false);
+                setPaymentClientSecret(null);
+                setPaymentIntentId(null);
+                setPendingJobData(null);
+                setParsedJobDataEscrow(null);
+                setJobUploadMethod(null);
+                setJobUrlInput('');
+                setJobFileInput(null);
+                setNewJobData({
+                    title: '',
+                    company: '',
+                    location: '',
+                    type: 'Full-Time',
+                    level: 'Manager',
+                    category: 'Channel & Reseller',
+                    region: 'NAmer',
+                    description: '',
+                    link: '',
+                    salaryRange: '',
+                    companyLogo: '',
+                    companyStage: '',
+                    companySize: '',
+                    isRemote: false,
+                    hasEquity: false,
+                    hasVisa: false
+                });
+                fetchJobs();
+                return;
+            }
+            
+            // Fallback: Verify payment via API
             const response = await fetch('/api/confirm-payment', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2920,6 +3219,10 @@ Questions? support@partnerships-careers.com`;
                 setPaymentClientSecret(null);
                 setPaymentIntentId(null);
                 setPendingJobData(null);
+                setParsedJobDataEscrow(null);
+                setJobUploadMethod(null);
+                setJobUrlInput('');
+                setJobFileInput(null);
                 setNewJobData({
                     title: '',
                     company: '',
@@ -3653,14 +3956,33 @@ Questions? support@partnerships-careers.com`;
                             )}
                             
                             {/* Manual Form (existing) */}
-                            {jobUploadMethod === 'manual' && (
+                            {jobUploadMethod === 'manual' && (() => {
+                                // Helper to get current value
+                                const getValue = (field) => (editingJobId && editJobData) ? (editJobData[field] || '') : (newJobData[field] || '');
+                                // Helper to update value
+                                const updateValue = (field, value) => {
+                                    if (editingJobId && editJobData) {
+                                        setEditJobData({...editJobData, [field]: value});
+                                    } else {
+                                        setNewJobData({...newJobData, [field]: value});
+                                    }
+                                };
+                                
+                                return (
                                 <form onSubmit={handleSubmitNewJob} className="space-y-6">
+                                    {editingJobId && (
+                                        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                                            <p className="text-sm text-blue-800 dark:text-blue-200">
+                                                ✏️ Editing existing job. Changes will be saved immediately after you submit.
+                                            </p>
+                                        </div>
+                                    )}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Job Title *</label>
                                 <input 
                                     type="text"
-                                    value={newJobData.title}
-                                    onChange={(e) => setNewJobData({...newJobData, title: e.target.value})}
+                                    value={getValue('title')}
+                                    onChange={(e) => updateValue('title', e.target.value)}
                                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 transition-colors duration-200"
                                     placeholder="e.g., Director of Channel Partnerships"
                                     required
@@ -3670,8 +3992,8 @@ Questions? support@partnerships-careers.com`;
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Company</label>
                                 <input 
                                     type="text"
-                                    value={newJobData.company || employerCompany}
-                                    onChange={(e) => setNewJobData({...newJobData, company: e.target.value})}
+                                    value={getValue('company') || employerCompany}
+                                    onChange={(e) => updateValue('company', e.target.value)}
                                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 transition-colors duration-200"
                                     placeholder={employerCompany || "Enter company name"}
                                 />
@@ -3680,8 +4002,8 @@ Questions? support@partnerships-careers.com`;
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Level *</label>
                                     <select 
-                                        value={newJobData.level}
-                                        onChange={(e) => setNewJobData({...newJobData, level: e.target.value})}
+                                        value={getValue('level')}
+                                        onChange={(e) => updateValue('level', e.target.value)}
                                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
                                         required
                                     >
@@ -3691,8 +4013,8 @@ Questions? support@partnerships-careers.com`;
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Job Type *</label>
                                     <select 
-                                        value={newJobData.type}
-                                        onChange={(e) => setNewJobData({...newJobData, type: e.target.value})}
+                                        value={getValue('type')}
+                                        onChange={(e) => updateValue('type', e.target.value)}
                                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
                                         required
                                     >
@@ -3705,8 +4027,8 @@ Questions? support@partnerships-careers.com`;
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Category *</label>
                                 <select 
-                                    value={newJobData.category}
-                                    onChange={(e) => setNewJobData({...newJobData, category: e.target.value})}
+                                    value={getValue('category')}
+                                    onChange={(e) => updateValue('category', e.target.value)}
                                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
                                     required
                                 >
@@ -3716,8 +4038,8 @@ Questions? support@partnerships-careers.com`;
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Region *</label>
                                 <select 
-                                    value={newJobData.region}
-                                    onChange={(e) => setNewJobData({...newJobData, region: e.target.value})}
+                                    value={getValue('region')}
+                                    onChange={(e) => updateValue('region', e.target.value)}
                                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
                                     required
                                 >
@@ -3728,8 +4050,8 @@ Questions? support@partnerships-careers.com`;
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Location *</label>
                                 <input 
                                     type="text"
-                                    value={newJobData.location}
-                                    onChange={(e) => setNewJobData({...newJobData, location: e.target.value})}
+                                    value={getValue('location')}
+                                    onChange={(e) => updateValue('location', e.target.value)}
                                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 transition-colors duration-200"
                                     placeholder="e.g., New York, NY or Remote"
                                     required
@@ -3738,8 +4060,8 @@ Questions? support@partnerships-careers.com`;
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Job Description *</label>
                                 <textarea 
-                                    value={newJobData.description}
-                                    onChange={(e) => setNewJobData({...newJobData, description: e.target.value})}
+                                    value={getValue('description')}
+                                    onChange={(e) => updateValue('description', e.target.value)}
                                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 transition-colors duration-200"
                                     rows={6}
                                     placeholder="Describe the role, responsibilities, and requirements..."
@@ -3750,8 +4072,8 @@ Questions? support@partnerships-careers.com`;
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Application Link *</label>
                                 <input 
                                     type="url"
-                                    value={newJobData.link}
-                                    onChange={(e) => setNewJobData({...newJobData, link: e.target.value})}
+                                    value={getValue('link')}
+                                    onChange={(e) => updateValue('link', e.target.value)}
                                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 transition-colors duration-200"
                                     placeholder="https://yourcompany.com/careers/job-id"
                                     required
@@ -3767,8 +4089,8 @@ Questions? support@partnerships-careers.com`;
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Salary Range</label>
                                         <input 
                                             type="text"
-                                            value={newJobData.salaryRange}
-                                            onChange={(e) => setNewJobData({...newJobData, salaryRange: e.target.value})}
+                                            value={getValue('salaryRange')}
+                                            onChange={(e) => updateValue('salaryRange', e.target.value)}
                                             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 transition-colors duration-200"
                                             placeholder="e.g., $120K-$180K or Competitive"
                                         />
@@ -3777,8 +4099,8 @@ Questions? support@partnerships-careers.com`;
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Company Logo URL (Optional)</label>
                                         <input 
                                             type="url"
-                                            value={newJobData.companyLogo}
-                                            onChange={(e) => setNewJobData({...newJobData, companyLogo: e.target.value})}
+                                            value={getValue('companyLogo')}
+                                            onChange={(e) => updateValue('companyLogo', e.target.value)}
                                             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 transition-colors duration-200"
                                             placeholder="Leave empty to auto-fetch logo"
                                         />
@@ -3793,8 +4115,8 @@ Questions? support@partnerships-careers.com`;
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Company Stage</label>
                                         <select 
-                                            value={newJobData.companyStage}
-                                            onChange={(e) => setNewJobData({...newJobData, companyStage: e.target.value})}
+                                            value={getValue('companyStage')}
+                                            onChange={(e) => updateValue('companyStage', e.target.value)}
                                             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
                                         >
                                             <option value="">Select stage...</option>
@@ -3809,8 +4131,8 @@ Questions? support@partnerships-careers.com`;
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Company Size</label>
                                         <select 
-                                            value={newJobData.companySize}
-                                            onChange={(e) => setNewJobData({...newJobData, companySize: e.target.value})}
+                                            value={getValue('companySize')}
+                                            onChange={(e) => updateValue('companySize', e.target.value)}
                                             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white transition-colors duration-200"
                                         >
                                             <option value="">Select size...</option>
@@ -3830,8 +4152,8 @@ Questions? support@partnerships-careers.com`;
                                         <label className="flex items-center">
                                             <input 
                                                 type="checkbox"
-                                                checked={newJobData.isRemote}
-                                                onChange={(e) => setNewJobData({...newJobData, isRemote: e.target.checked})}
+                                                checked={getValue('isRemote') || false}
+                                                onChange={(e) => updateValue('isRemote', e.target.checked)}
                                                 className="w-4 h-4 text-indigo-600 border-gray-300 dark:border-gray-600 rounded focus:ring-indigo-500 dark:bg-gray-700 transition-colors duration-200"
                                             />
                                             <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Remote Work Options</span>
@@ -3839,8 +4161,8 @@ Questions? support@partnerships-careers.com`;
                                         <label className="flex items-center">
                                             <input 
                                                 type="checkbox"
-                                                checked={newJobData.hasEquity}
-                                                onChange={(e) => setNewJobData({...newJobData, hasEquity: e.target.checked})}
+                                                checked={getValue('hasEquity') || false}
+                                                onChange={(e) => updateValue('hasEquity', e.target.checked)}
                                                 className="w-4 h-4 text-indigo-600 border-gray-300 dark:border-gray-600 rounded focus:ring-indigo-500 dark:bg-gray-700 transition-colors duration-200"
                                             />
                                             <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Equity Compensation</span>
@@ -3848,8 +4170,8 @@ Questions? support@partnerships-careers.com`;
                                         <label className="flex items-center">
                                             <input 
                                                 type="checkbox"
-                                                checked={newJobData.hasVisa}
-                                                onChange={(e) => setNewJobData({...newJobData, hasVisa: e.target.checked})}
+                                                checked={getValue('hasVisa') || false}
+                                                onChange={(e) => updateValue('hasVisa', e.target.checked)}
                                                 className="w-4 h-4 text-indigo-600 border-gray-300 dark:border-gray-600 rounded focus:ring-indigo-500 dark:bg-gray-700 transition-colors duration-200"
                                             />
                                             <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Visa Sponsorship Available</span>
@@ -3864,7 +4186,7 @@ Questions? support@partnerships-careers.com`;
                                             type="submit"
                                             className="flex-1 bg-indigo-600 dark:bg-indigo-500 text-white py-3 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium transition-colors duration-200"
                                         >
-                                            Continue to Payment - $99
+                                            {editingJobId ? 'Save Changes' : 'Continue to Payment - $99'}
                                         </button>
                                         <button 
                                             type="button"
@@ -3936,7 +4258,8 @@ Questions? support@partnerships-careers.com`;
                                     </div>
                                 )}
                                 </form>
-                            )}
+                                );
+                            })()}
                         </div>
                     )}
                     
@@ -4390,6 +4713,36 @@ Questions? support@partnerships-careers.com`;
                                                     
                                                     {/* Action Buttons */}
                                                     <div className="flex flex-wrap gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                // Load job data into edit form
+                                                                setEditingJobId(job.id);
+                                                                setEditJobData({
+                                                                    title: job.title || '',
+                                                                    company: job.company || '',
+                                                                    location: job.location || '',
+                                                                    type: job.type || 'Full-Time',
+                                                                    level: job.level || 'Manager',
+                                                                    category: job.category || 'Channel & Reseller',
+                                                                    region: job.region || 'NAmer',
+                                                                    description: job.description || '',
+                                                                    link: job.link || '',
+                                                                    salaryRange: job.salaryRange || '',
+                                                                    companyLogo: job.companyLogo || '',
+                                                                    companyStage: job.companyStage || '',
+                                                                    companySize: job.companySize || '',
+                                                                    isRemote: job.isRemote || false,
+                                                                    hasEquity: job.hasEquity || false,
+                                                                    hasVisa: job.hasVisa || false
+                                                                });
+                                                                setShowJobForm(true);
+                                                                setJobUploadMethod('manual');
+                                                            }}
+                                                            className="text-sm bg-indigo-600 dark:bg-indigo-500 text-white px-3 py-1.5 rounded hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors duration-200"
+                                                        >
+                                                            Edit
+                                                        </button>
                                                         <button
                                                             type="button"
                                                             onClick={async () => {
