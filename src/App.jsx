@@ -435,19 +435,24 @@ function SubscriptionPaymentForm({ clientSecret, onSuccess, onCancel, isProcessi
                     }}
                 />
             </div>
-            <div className="flex gap-3 mt-4">
+            <div className="flex flex-col sm:flex-row gap-3 mt-4">
                 <button
                     type="submit"
                     disabled={!stripe || isProcessing}
-                    className="flex-1 bg-indigo-600 dark:bg-indigo-500 text-white py-2.5 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 text-sm"
+                    className="flex-1 bg-indigo-600 dark:bg-indigo-500 text-white py-2.5 sm:py-2 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 text-sm sm:text-base"
                 >
-                    {isProcessing ? 'Processing...' : 'Subscribe for $5/month'}
+                    {isProcessing ? 'Processing...' : (
+                        <span>
+                            <span className="hidden sm:inline">Subscribe for $5/month</span>
+                            <span className="sm:hidden">Subscribe $5/mo</span>
+                        </span>
+                    )}
                 </button>
                 <button
                     type="button"
                     onClick={onCancel}
                     disabled={isProcessing}
-                    className="px-4 py-2.5 border border-white/30 dark:border-gray-600 rounded-lg hover:bg-white/10 dark:hover:bg-gray-700 text-white dark:text-gray-300 transition-colors duration-200 disabled:opacity-50 text-sm"
+                    className="px-4 py-2.5 sm:py-2 border border-white/30 dark:border-gray-600 rounded-lg hover:bg-white/10 dark:hover:bg-gray-700 text-white dark:text-gray-300 transition-colors duration-200 disabled:opacity-50 text-sm sm:text-base"
                 >
                     Cancel
                 </button>
@@ -4779,13 +4784,13 @@ Questions? support@partnerships-careers.com`;
                                 <h3 className="font-bold">Get Job Alerts</h3>
                             </div>
                             <div className="space-y-3">
-                            <div className="flex gap-2 relative">
+                            <div className="flex flex-col sm:flex-row gap-2 relative">
                                 <input
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     placeholder="Enter your email"
-                                    className="flex-1 px-4 py-3 rounded-lg text-gray-900 dark:text-gray-100 dark:bg-gray-700 dark:placeholder-gray-400 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                    className="flex-1 px-4 py-3 rounded-lg text-gray-900 dark:text-gray-100 dark:bg-gray-700 dark:placeholder-gray-400 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
                                 />
                                 <button
                                     ref={signupButtonRef}
@@ -4881,17 +4886,17 @@ Questions? support@partnerships-careers.com`;
                             {email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && (
                                 <div className="space-y-2 pt-2">
                                     <label className="block text-sm font-medium text-white mb-3">Alert Frequency:</label>
-                                    <div className="grid grid-cols-3 gap-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                         <button
                                             type="button"
                                             onClick={() => setAlertFrequency('daily')}
-                                            className={`p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer text-left ${
+                                            className={`p-3 sm:p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer text-left ${
                                                 alertFrequency === 'daily' 
                                                     ? 'bg-indigo-600 dark:bg-indigo-500 border-indigo-600 dark:border-indigo-500 text-white' 
                                                     : 'bg-white/10 dark:bg-white/10 border-white/20 dark:border-white/20 text-white hover:bg-white/20 dark:hover:bg-white/20'
                                             }`}
                                         >
-                                            <div className="flex items-center gap-2 mb-2">
+                                            <div className="flex items-center gap-2 mb-1 sm:mb-2">
                                                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
                                                     alertFrequency === 'daily' 
                                                         ? 'bg-white/20' 
@@ -4905,20 +4910,20 @@ Questions? support@partnerships-careers.com`;
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                                     </svg>
                                                 </div>
-                                                <span className="text-sm font-semibold">Daily</span>
+                                                <span className="text-sm sm:text-base font-semibold">Daily</span>
                                             </div>
-                                            <p className="text-xs opacity-90">Get new jobs every day</p>
+                                            <p className="text-xs sm:text-sm opacity-90">Get new jobs every day</p>
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => setAlertFrequency('weekly')}
-                                            className={`p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer text-left ${
+                                            className={`p-3 sm:p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer text-left ${
                                                 alertFrequency === 'weekly' 
                                                     ? 'bg-indigo-600 dark:bg-indigo-500 border-indigo-600 dark:border-indigo-500 text-white' 
                                                     : 'bg-white/10 dark:bg-white/10 border-white/20 dark:border-white/20 text-white hover:bg-white/20 dark:hover:bg-white/20'
                                             }`}
                                         >
-                                            <div className="flex items-center gap-2 mb-2">
+                                            <div className="flex items-center gap-2 mb-1 sm:mb-2">
                                                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
                                                     alertFrequency === 'weekly' 
                                                         ? 'bg-white/20' 
@@ -4932,9 +4937,9 @@ Questions? support@partnerships-careers.com`;
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                                     </svg>
                                                 </div>
-                                                <span className="text-sm font-semibold">Weekly</span>
+                                                <span className="text-sm sm:text-base font-semibold">Weekly</span>
                                             </div>
-                                            <p className="text-xs opacity-90">Free weekly digest</p>
+                                            <p className="text-xs sm:text-sm opacity-90">Free weekly digest</p>
                                         </button>
                                         <button
                                             type="button"
@@ -4944,13 +4949,13 @@ Questions? support@partnerships-careers.com`;
                                                     setShowRealtimeCheckout(true);
                                                 }
                                             }}
-                                            className={`p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer text-left ${
+                                            className={`p-3 sm:p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer text-left ${
                                                 alertFrequency === 'realtime' 
                                                     ? 'bg-indigo-600 dark:bg-indigo-500 border-indigo-600 dark:border-indigo-500 text-white' 
                                                     : 'bg-white/10 dark:bg-white/10 border-white/20 dark:border-white/20 text-white hover:bg-white/20 dark:hover:bg-white/20'
                                             }`}
                                         >
-                                            <div className="flex items-center gap-2 mb-2">
+                                            <div className="flex items-center gap-2 mb-1 sm:mb-2">
                                                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
                                                     alertFrequency === 'realtime' 
                                                         ? 'bg-white/20' 
@@ -4964,9 +4969,9 @@ Questions? support@partnerships-careers.com`;
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                                     </svg>
                                                 </div>
-                                                <span className="text-sm font-semibold">Realtime</span>
+                                                <span className="text-sm sm:text-base font-semibold">Realtime</span>
                                             </div>
-                                            <p className="text-xs opacity-90">$5/month - Instant</p>
+                                            <p className="text-xs sm:text-sm opacity-90">$5/month - Instant</p>
                                         </button>
                                     </div>
                                     {showRealtimeCheckout && alertFrequency === 'realtime' && (
@@ -5040,7 +5045,12 @@ Questions? support@partnerships-careers.com`;
                                                                 </svg>
                                                                 Loading payment form...
                                                             </span>
-                                                        ) : 'Continue to Payment →'}
+                                                        ) : (
+                                                            <span>
+                                                                <span className="hidden sm:inline">Continue to Payment →</span>
+                                                                <span className="sm:hidden">Continue →</span>
+                                                            </span>
+                                                        )}
                                                     </button>
                                                 </div>
                                             ) : (
