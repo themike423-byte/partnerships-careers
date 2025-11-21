@@ -72,10 +72,12 @@ export default async function handler(req, res) {
         customerId = customer.id;
       }
 
+      const priceId = process.env.STRIPE_REALTIME_ALERTS_PRICE_ID || 'price_1SW0FACaW2Du37V1Xwv0hG6w';
+      
       const subscription = await stripe.subscriptions.create({
         customer: customerId,
         items: [{
-          price: process.env.STRIPE_REALTIME_ALERTS_PRICE_ID || 'price_1SW0FACaW2Du37V1Xwv0hG6w'
+          price: priceId
         }],
         metadata: { alertId: alertId, email: normalizedEmail }
       });
