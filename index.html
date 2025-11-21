@@ -5,15 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin-allow-popups">
     <title>Partnerships Careers - Find Your Next Partnership Role</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="alternate icon" href="/favicon.svg">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
     <script>
         // Apply dark mode immediately on page load before React renders to prevent flash
         (function() {
             const darkMode = localStorage.getItem('darkMode');
+            const html = document.documentElement;
             if (darkMode === 'true') {
-                document.documentElement.classList.add('dark');
+                html.classList.add('dark');
+                html.setAttribute('data-theme', 'dark');
             } else {
-                document.documentElement.classList.remove('dark');
+                html.classList.remove('dark');
+                html.setAttribute('data-theme', 'light');
             }
         })();
     </script>

@@ -1,0 +1,6 @@
+<svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" text-rendering="geometricPrecision">
+  <!-- PC logo - high resolution, perfectly centered -->
+  <rect x="0" y="0" width="52" height="52" rx="6" fill="#4F46E5"/>
+  <text x="26" y="28" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">PC</text>
+</svg>
+

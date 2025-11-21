@@ -1,0 +1,6 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- Indigo square with PC icon for favicon (matching button color) -->
+  <rect width="32" height="32" rx="4" fill="#4F46E5"/>
+  <text x="16" y="20" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">PC</text>
+</svg>
+

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db, collection, getDocs, addDoc, query, where, auth, googleProvider, microsoftProvider } from './firebase';
 import { onAuthStateChanged, signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { loadStripe } from '@stripe/stripe-js';
@@ -30,6 +30,43 @@ const fetchCompanyLogo = async (companyName) => {
     }
 
     try {
+        const normalizedName = companyName.toLowerCase().trim();
+        
+        // Special handling for admin accounts - use PC logo
+        // Be more flexible with matching to catch variations like "Admin PartnershipsCareers2"
+        const isAdminAccount = normalizedName.includes('admin') && (
+            normalizedName.includes('1255') || 
+            normalizedName.includes('partnerships') || 
+            normalizedName.includes('careers')
+        );
+        if (isAdminAccount) {
+            return '/logo-icon.svg';
+        }
+        
+        // Special handling for TD Synnex Spain - treat same as TD Synnex
+        if (normalizedName.includes('td synnex') || normalizedName.includes('tdsynnex') || normalizedName.includes('synnex spain')) {
+            // Use Google favicon service for TD Synnex with higher resolution
+            return 'https://www.google.com/s2/favicons?domain=tdsynnex.com&sz=256';
+        }
+        
+        // Special handling for Confluent - use high-res logo from their website
+        if (normalizedName.includes('confluent')) {
+            // Use Confluent's actual logo from their website (high resolution)
+            return 'https://www.confluent.io/wp-content/themes/confluent/assets/images/logo/confluent-logo.svg';
+        }
+        
+        // Special handling for Elastic - use high-res logo
+        if (normalizedName.includes('elastic')) {
+            // Use Elastic's actual logo from their website (high resolution)
+            return 'https://static-www.elastic.co/v3/assets/bltefdd0b53724fa2ce/blt280217a63b82a029/6202d3378b1f312528798412/logo-elastic.svg';
+        }
+        
+        // Special handling for Databricks - use high-res logo
+        if (normalizedName.includes('databricks')) {
+            // Use Databricks' actual logo from their website (high resolution)
+            return 'https://www.databricks.com/wp-content/uploads/2020/09/databricks-logo.svg';
+        }
+        
         // Clean company name - remove common suffixes and extra spaces
         const cleanName = companyName
             .trim()
@@ -41,6 +78,8 @@ const fetchCompanyLogo = async (companyName) => {
         const hyphenName = cleanName.toLowerCase().replace(/\s+/g, '-');
         const spaceName = cleanName.toLowerCase().replace(/\s+/g, '');
         
+        // Use Google's favicon service (free, no account required, reliable)
+        // Try different domain variations to find the best match
         const domainVariations = [
             baseName,
             hyphenName,
@@ -49,38 +88,23 @@ const fetchCompanyLogo = async (companyName) => {
             hyphenName.replace(/-/g, '')
         ];
 
-        // Try Clearbit Logo API (free, no auth required)
-        // Clearbit returns 200 if logo exists, 404 if not
+        // Try Google favicon service with different domain variations
         for (const domain of domainVariations) {
             if (!domain) continue;
             
-            const clearbitUrl = `https://logo.clearbit.com/${domain}.com`;
-            
-            try {
-                // Use image loading to test if logo exists (works better with CORS)
-                const img = new Image();
-                const logoPromise = new Promise((resolve) => {
-                    img.onload = () => resolve(clearbitUrl);
-                    img.onerror = () => resolve(null);
-                    // Timeout after 2 seconds
-                    setTimeout(() => resolve(null), 2000);
-                });
-                img.src = clearbitUrl;
-                const result = await logoPromise;
-                if (result) {
-                    return result;
-                }
-            } catch (err) {
-                // Continue to next variation
-                continue;
+            // Google favicon service - use higher resolution (256 instead of 128) for better quality
+            const googleFaviconUrl = `https://www.google.com/s2/favicons?domain=${domain}.com&sz=256`;
+            // Google's service is reliable, so we can return it directly
+            // Try the most likely domain first (baseName)
+            if (domain === baseName) {
+                return googleFaviconUrl;
             }
         }
 
-        // Fallback: Use Google's favicon service as last resort
-        // This works for most companies but provides smaller icons
+        // Fallback: Use Google's favicon service with higher resolution for better quality
         const fallbackDomain = baseName || spaceName || cleanName.toLowerCase().replace(/\s+/g, '');
         if (fallbackDomain) {
-            return `https://www.google.com/s2/favicons?domain=${fallbackDomain}.com&sz=128`;
+            return `https://www.google.com/s2/favicons?domain=${fallbackDomain}.com&sz=256`;
         }
 
         return '';
@@ -206,6 +230,14 @@ const createSlug = (name) => {
     return name.toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)/g, '');
+};
+
+// Helper: Normalize company name for deduplication (removes whitespace, converts to lowercase)
+const normalizeCompanyName = (name) => {
+    if (!name) return '';
+    return name.toLowerCase()
+        .replace(/\s+/g, '') // Remove all whitespace
+        .trim();
 };
 
 // Helper: Check if job title indicates recruiter/HR role
@@ -438,88 +470,58 @@ function App() {
     const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('darkMode');
         const isDark = saved === 'true';
-        // Apply class immediately on initial state
+        // Apply class immediately to html element (Tailwind requires it on html)
+        const html = document.documentElement;
         if (isDark) {
-            document.documentElement.classList.add('dark');
+            html.classList.add('dark');
+            console.log('🌙 Initial dark mode: ON. HTML classes:', html.className);
         } else {
-            document.documentElement.classList.remove('dark');
+            html.classList.remove('dark');
+            console.log('☀️ Initial dark mode: OFF. HTML classes:', html.className);
         }
         return isDark;
     });
     
-    // Apply dark mode to document root when it changes (backup/sync)
+    // Sync dark mode class with state changes - CRITICAL: This must run on every state change
     useEffect(() => {
-        console.log('🌙 Dark mode state changed:', isDarkMode);
         const html = document.documentElement;
-        const hasDark = html.classList.contains('dark');
+        console.log('🔄 useEffect: isDarkMode =', isDarkMode);
         
-        if (isDarkMode && !hasDark) {
+        // CRITICAL: Tailwind requires the 'dark' class on the html element
+        // Remove first to ensure clean state
+        html.classList.remove('dark');
+        
+        if (isDarkMode) {
             html.classList.add('dark');
-            console.log('✅ Added dark class to documentElement');
-        } else if (!isDarkMode && hasDark) {
-            html.classList.remove('dark');
-            console.log('✅ Removed dark class from documentElement');
+            console.log('✅ DARK MODE ON - Added dark class. HTML classes:', html.className);
         } else {
-            console.log('ℹ️ Dark class already in sync:', hasDark);
+            console.log('✅ DARK MODE OFF - Removed dark class. HTML classes:', html.className);
         }
         
         localStorage.setItem('darkMode', isDarkMode.toString());
+        
+        // Verify the class is actually on the element
+        console.log('🔍 Verification - HTML has dark class?', html.classList.contains('dark'));
     }, [isDarkMode]);
     
-    // Toggle dark mode function
+    // Toggle dark mode function - simple and direct
     const toggleDarkMode = (e) => {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
         }
-        
-        const html = document.documentElement;
-        const currentState = isDarkMode;
-        const newValue = !currentState;
-        
-        console.log('🔄 Toggling dark mode');
-        console.log('   Current state:', currentState);
-        console.log('   New state:', newValue);
-        console.log('   Before - HTML classes:', html.className);
-        console.log('   Before - Has dark class?', html.classList.contains('dark'));
-        
-        // Apply class immediately and force a re-render
-        if (newValue) {
-            html.classList.add('dark');
-        } else {
-            html.classList.remove('dark');
-        }
-        
-        // Force immediate DOM update without hiding element
-        void html.offsetHeight; // Trigger reflow to force CSS recalculation
-        
-        console.log('   After - HTML classes:', html.className);
-        console.log('   After - Has dark class?', html.classList.contains('dark'));
-        
-        // Update state
+        const newValue = !isDarkMode;
+        console.log('🔄 TOGGLE: Changing from', isDarkMode, 'to', newValue);
         setIsDarkMode(newValue);
-        localStorage.setItem('darkMode', newValue.toString());
-        
-        // Verify after a short delay
-        setTimeout(() => {
-            const finalHasDark = document.documentElement.classList.contains('dark');
-            console.log('   Final check - Has dark class?', finalHasDark);
-            console.log('   Final check - HTML classes:', document.documentElement.className);
-            if (finalHasDark !== newValue) {
-                console.error('❌ Mismatch! State says', newValue, 'but DOM has dark class:', finalHasDark);
-                // Force correct state
-                if (newValue && !finalHasDark) {
-                    document.documentElement.classList.add('dark');
-                } else if (!newValue && finalHasDark) {
-                    document.documentElement.classList.remove('dark');
-                }
-            }
-        }, 50);
     };
     const [isSignUp, setIsSignUp] = useState(false);
     const [showForgotPassword, setShowForgotPassword] = useState(false);
     const [resetEmailSent, setResetEmailSent] = useState(false);
     const [email, setEmail] = useState('');
+    const [alertFrequency, setAlertFrequency] = useState('weekly'); // daily, weekly, or realtime
+    const [alertSubmitting, setAlertSubmitting] = useState(false);
+    const [showRealtimeCheckout, setShowRealtimeCheckout] = useState(false);
+    const signupButtonRef = useRef(null);
     const [isEmployerLoggedIn, setIsEmployerLoggedIn] = useState(false);
     const [employerCompany, setEmployerCompany] = useState('');
     const [employerFirstName, setEmployerFirstName] = useState('');
@@ -531,6 +533,95 @@ function App() {
     const [showTeamModal, setShowTeamModal] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
     const [showCompanyPage, setShowCompanyPage] = useState(false);
+    const [showCompaniesPage, setShowCompaniesPage] = useState(false);
+    const [allCompanies, setAllCompanies] = useState([]);
+    const [companiesLoading, setCompaniesLoading] = useState(false);
+    const [expandedCompanyId, setExpandedCompanyId] = useState(null);
+    const [companySummaries, setCompanySummaries] = useState({});
+
+    // Generate company overview (what they do and partnership focus)
+    const generateCompanyOverview = async (companyName, companyJobs) => {
+        const companyKey = companyName.toLowerCase();
+        
+        // Check if already generated
+        if (companySummaries[companyKey]) {
+            return companySummaries[companyKey];
+        }
+
+        // Check if stored in company document
+        try {
+            const companiesRef = collection(db, 'companies');
+            const companiesSnapshot = await getDocs(companiesRef);
+            let companyDoc = null;
+            companiesSnapshot.forEach((docSnapshot) => {
+                const companyData = docSnapshot.data();
+                if (companyData.name?.toLowerCase() === companyKey) {
+                    companyDoc = { id: docSnapshot.id, ...companyData };
+                }
+            });
+            
+            if (companyDoc?.companyOverview) {
+                setCompanySummaries(prev => ({ ...prev, [companyKey]: companyDoc.companyOverview }));
+                return companyDoc.companyOverview;
+            }
+        } catch (error) {
+            console.error('Error fetching company overview:', error);
+        }
+
+        // Generate overview based on company's jobs
+        let overview = '';
+        if (companyJobs && companyJobs.length > 0) {
+            const categories = [...new Set(companyJobs.map(j => j.category).filter(Boolean))];
+            const regions = [...new Set(companyJobs.map(j => j.region).filter(Boolean))];
+            
+            const categoryDesc = {
+                'Channel & Reseller': 'channel and reseller partnerships',
+                'Technology & ISV': 'technology integrations and ISV partnerships',
+                'Strategic Alliances': 'strategic alliances and enterprise partnerships',
+                'Ecosystem & Marketplace': 'ecosystem development and marketplace programs',
+                'Distribution & OEM': 'distribution channels and OEM partnerships',
+                'Agency & Services': 'agency relationships and service partnerships'
+            };
+            
+            const primaryCategory = categories[0] || 'partnerships';
+            const categoryText = categoryDesc[primaryCategory] || primaryCategory.toLowerCase();
+            
+            overview = `${companyName} is a leading organization focused on ${categoryText}. `;
+            
+            if (categories.length > 1) {
+                overview += `The company engages across multiple partnership types including ${categories.slice(1, 3).map(c => categoryDesc[c] || c.toLowerCase()).join(', ')}. `;
+            }
+            
+            if (regions.length > 0) {
+                const regionText = regions.length === 1 ? regions[0] : 'global markets';
+                overview += `Their partnership strategy spans ${regionText}, working with strategic partners to deliver innovative solutions and drive mutual growth. `;
+            } else {
+                overview += `The company works closely with partners to deliver innovative solutions and drive mutual success through strategic collaboration and relationship building. `;
+            }
+            
+            overview += `Their partnership focus centers on building long-term, value-driven relationships that create win-win outcomes for both the company and its partners.`;
+        } else {
+            overview = `${companyName} is a forward-thinking organization focused on building strategic partnerships. The company works closely with partners to deliver innovative solutions and drive mutual success in the market through collaborative relationships. Their partnership focus centers on creating value-driven alliances that benefit all stakeholders.`;
+        }
+
+        // Store in company document if it exists
+        try {
+            const companiesRef = collection(db, 'companies');
+            const companiesSnapshot = await getDocs(companiesRef);
+            companiesSnapshot.forEach(async (docSnapshot) => {
+                const companyData = docSnapshot.data();
+                if (companyData.name?.toLowerCase() === companyKey) {
+                    const companyRef = doc(db, 'companies', docSnapshot.id);
+                    await updateDoc(companyRef, { companyOverview: overview });
+                }
+            });
+        } catch (error) {
+            console.error('Error saving company overview:', error);
+        }
+
+        setCompanySummaries(prev => ({ ...prev, [companyKey]: overview }));
+        return overview;
+    };
     const [showJobForm, setShowJobForm] = useState(false);
     const [linkedinAuthLoading, setLinkedinAuthLoading] = useState(false);
     const [showRequestAccessModal, setShowRequestAccessModal] = useState(false);
@@ -544,6 +635,7 @@ function App() {
     const [pendingJobData, setPendingJobData] = useState(null);
     const [expandedJobs, setExpandedJobs] = useState([]);
     const [jobSummaries, setJobSummaries] = useState({});
+    const [companyFastFacts, setCompanyFastFacts] = useState({});
     const [appError, setAppError] = useState(null);
     const [newJobData, setNewJobData] = useState({
         title: '',
@@ -593,8 +685,20 @@ function App() {
         const urlParams = new URLSearchParams(window.location.search);
         const paymentStatus = urlParams.get('payment');
         const paymentType = urlParams.get('type');
+        const alertSubscription = urlParams.get('alert_subscription');
+        const alertId = urlParams.get('alert_id');
         
-        if (paymentStatus === 'success') {
+        if (alertSubscription === 'success') {
+            alert('🎉 Payment successful! Your realtime job alerts subscription is now active. You\'ll receive instant notifications when new jobs are posted.');
+            setEmail('');
+            setAlertFrequency('weekly');
+            setShowRealtimeCheckout(false);
+            window.history.replaceState({}, document.title, window.location.pathname);
+        } else if (alertSubscription === 'cancelled') {
+            alert('Checkout was cancelled. You can try again anytime.');
+            setShowRealtimeCheckout(false);
+            window.history.replaceState({}, document.title, window.location.pathname);
+        } else if (paymentStatus === 'success') {
             if (paymentType === 'new') {
                 setShowJobForm(true);
                 setShowDashboard(true);
@@ -613,6 +717,29 @@ function App() {
             clearInterval(interval);
         };
     }, []);
+
+    // Force button color - directly manipulate DOM to override any CSS
+    useEffect(() => {
+        if (signupButtonRef.current) {
+            const btn = signupButtonRef.current;
+            btn.style.setProperty('background-color', '#f59e0b', 'important');
+            btn.style.setProperty('color', '#ffffff', 'important');
+            btn.style.setProperty('border', 'none', 'important');
+            btn.style.setProperty('opacity', (!email || alertSubmitting) ? '0.5' : '1', 'important');
+            btn.style.setProperty('isolation', 'isolate', 'important');
+            btn.style.setProperty('z-index', '10000', 'important');
+            btn.style.setProperty('position', 'relative', 'important');
+        }
+    }, [email, alertSubmitting]);
+
+    // Auto-show checkout expander when realtime is selected and email is valid
+    useEffect(() => {
+        if (alertFrequency === 'realtime' && email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            setShowRealtimeCheckout(true);
+        } else if (alertFrequency !== 'realtime') {
+            setShowRealtimeCheckout(false);
+        }
+    }, [alertFrequency, email]);
     
     // Handle Firebase authentication state - separate useEffect
     useEffect(() => {
@@ -1122,13 +1249,370 @@ function App() {
         }
     }, []);
 
+    // Fetch all companies for companies page - cross-referenced with jobs
+    const fetchAllCompanies = async () => {
+        setCompaniesLoading(true);
+        try {
+            // Get all companies from companies collection
+            const companiesRef = collection(db, 'companies');
+            const companiesSnapshot = await getDocs(companiesRef);
+            const companiesMap = new Map();
+            
+            companiesSnapshot.forEach((docSnapshot) => {
+                const companyData = docSnapshot.data();
+                const normalizedKey = normalizeCompanyName(companyData.name);
+                // Use the original name as the canonical name, but normalize for key
+                if (!companiesMap.has(normalizedKey)) {
+                    companiesMap.set(normalizedKey, {
+                        id: docSnapshot.id,
+                        name: companyData.name || 'Unknown Company',
+                        logo: companyData.logo || '',
+                        website: companyData.website || '',
+                        ...companyData
+                    });
+                } else {
+                    // If duplicate found, prefer the one with more complete data
+                    const existing = companiesMap.get(normalizedKey);
+                    if (!existing.logo && companyData.logo) {
+                        companiesMap.set(normalizedKey, {
+                            ...existing,
+                            logo: companyData.logo
+                        });
+                    }
+                }
+            });
+            
+            // Get all active jobs to cross-reference logos
+            const jobsRef = collection(db, 'jobs');
+            const jobsQuery = query(jobsRef, where('status', '==', 'active'));
+            const jobsSnapshot = await getDocs(jobsQuery);
+            
+            const companyLogosMap = new Map();
+            const logoUpdatePromises = [];
+            
+            // Extract company logos from jobs (but skip admin accounts - they should use PC logo)
+            jobsSnapshot.forEach((docSnapshot) => {
+                const jobData = docSnapshot.data();
+                if (jobData.company && jobData.companyLogo) {
+                    const companyKey = normalizeCompanyName(jobData.company);
+                    const normalizedName = (jobData.company || '').toLowerCase().trim();
+                    const isAdminAccount = normalizedName.includes('admin') && (
+                        normalizedName.includes('1255') || 
+                        normalizedName.includes('partnerships') || 
+                        normalizedName.includes('careers')
+                    );
+                    // Don't add admin account logos from jobs - they should use PC logo
+                    if (!isAdminAccount && !companyLogosMap.has(companyKey)) {
+                        companyLogosMap.set(companyKey, jobData.companyLogo);
+                    }
+                }
+            });
+            
+            // Merge logos from jobs into companies, and fetch missing ones
+            const companiesArray = [];
+            for (const [companyKey, companyData] of companiesMap.entries()) {
+                let logo = companyData.logo;
+                
+                console.log(`Processing company: ${companyData.name}, has logo: ${!!logo}, current logo: ${logo}`);
+                
+                // Special handling: Check for admin accounts FIRST - ALWAYS use PC logo
+                const normalizedName = (companyData.name || '').toLowerCase().trim();
+                // Check for admin accounts - be more flexible with matching
+                const isAdminAccount = normalizedName.includes('admin') && (
+                    normalizedName.includes('1255') || 
+                    normalizedName.includes('partnerships') || 
+                    normalizedName.includes('careers')
+                );
+                if (isAdminAccount) {
+                    const pcLogo = '/logo-icon.svg';
+                    // FORCE PC logo regardless of what's in database
+                    logo = pcLogo;
+                    companyData.logo = pcLogo;
+                    // Always update database to ensure it's persisted
+                    if (companyData.id) {
+                        const updatePromise = (async () => {
+                            try {
+                                const companyRef = doc(db, 'companies', companyData.id);
+                                await updateDoc(companyRef, { logo: pcLogo });
+                                console.log(`  → FORCED update: admin account ${companyData.name} with PC logo in database`);
+                            } catch (err) {
+                                console.error(`Error updating admin logo for ${companyData.id}:`, err);
+                            }
+                        })();
+                        logoUpdatePromises.push(updatePromise);
+                    }
+                    console.log(`  → FORCED PC logo for admin account: ${companyData.name}`);
+                } else if (normalizedName.includes('confluent')) {
+                    // Special handling for Confluent - use high-res SVG logo
+                    const confluentLogo = 'https://www.confluent.io/wp-content/themes/confluent/assets/images/logo/confluent-logo.svg';
+                    logo = confluentLogo;
+                    companyData.logo = confluentLogo;
+                    // Always update database to ensure it's persisted
+                    if (companyData.id) {
+                        const updatePromise = (async () => {
+                            try {
+                                const companyRef = doc(db, 'companies', companyData.id);
+                                await updateDoc(companyRef, { logo: confluentLogo });
+                                console.log(`  → FORCED update: Confluent with high-res logo in database`);
+                            } catch (err) {
+                                console.error(`Error updating Confluent logo:`, err);
+                            }
+                        })();
+                        logoUpdatePromises.push(updatePromise);
+                    }
+                    console.log(`  → FORCED Confluent high-res logo: ${companyData.name}`);
+                } else if (normalizedName.includes('elastic')) {
+                    // Special handling for Elastic - use high-res SVG logo
+                    const elasticLogo = 'https://static-www.elastic.co/v3/assets/bltefdd0b53724fa2ce/blt280217a63b82a029/6202d3378b1f312528798412/logo-elastic.svg';
+                    logo = elasticLogo;
+                    companyData.logo = elasticLogo;
+                    if (companyData.id) {
+                        const updatePromise = (async () => {
+                            try {
+                                const companyRef = doc(db, 'companies', companyData.id);
+                                await updateDoc(companyRef, { logo: elasticLogo });
+                                console.log(`  → FORCED update: Elastic with high-res logo in database`);
+                            } catch (err) {
+                                console.error(`Error updating Elastic logo:`, err);
+                            }
+                        })();
+                        logoUpdatePromises.push(updatePromise);
+                    }
+                    console.log(`  → FORCED Elastic high-res logo: ${companyData.name}`);
+                } else if (normalizedName.includes('databricks')) {
+                    // Special handling for Databricks - use high-res SVG logo
+                    const databricksLogo = 'https://www.databricks.com/wp-content/uploads/2020/09/databricks-logo.svg';
+                    logo = databricksLogo;
+                    companyData.logo = databricksLogo;
+                    if (companyData.id) {
+                        const updatePromise = (async () => {
+                            try {
+                                const companyRef = doc(db, 'companies', companyData.id);
+                                await updateDoc(companyRef, { logo: databricksLogo });
+                                console.log(`  → FORCED update: Databricks with high-res logo in database`);
+                            } catch (err) {
+                                console.error(`Error updating Databricks logo:`, err);
+                            }
+                        })();
+                        logoUpdatePromises.push(updatePromise);
+                    }
+                    console.log(`  → FORCED Databricks high-res logo: ${companyData.name}`);
+                } else if (normalizedName.includes('td synnex') || normalizedName.includes('tdsynnex') || normalizedName.includes('synnex spain')) {
+                    // Special handling for TD Synnex Spain - FORCE same logo as TD Synnex using Google favicon service
+                    const synnexLogo = 'https://www.google.com/s2/favicons?domain=tdsynnex.com&sz=128';
+                    // FORCE logo - always override whatever is in database
+                    logo = synnexLogo;
+                    companyData.logo = synnexLogo;
+                    // Always update database to ensure it's persisted
+                    if (companyData.id) {
+                        const updatePromise = (async () => {
+                            try {
+                                const companyRef = doc(db, 'companies', companyData.id);
+                                await updateDoc(companyRef, { logo: synnexLogo });
+                                console.log(`  → FORCED update: TD Synnex with logo in database`);
+                            } catch (err) {
+                                console.error(`Error updating TD Synnex logo:`, err);
+                            }
+                        })();
+                        logoUpdatePromises.push(updatePromise);
+                    }
+                    console.log(`  → FORCED TD Synnex logo: ${companyData.name}`);
+                } else {
+                    // Use logo from jobs if company doesn't have one (but not for admin accounts)
+                    if (!logo && companyLogosMap.has(companyKey)) {
+                        logo = companyLogosMap.get(companyKey);
+                        console.log(`  → Using logo from jobs: ${logo}`);
+                    }
+                    
+                    // If still no logo, fetch it automatically (but not for admin accounts)
+                    if (!logo && companyData.name) {
+                    console.log(`  → Fetching logo for: ${companyData.name}`);
+                    const fetchPromise = fetchCompanyLogo(companyData.name).then(async (logoUrl) => {
+                        console.log(`  → Fetched logo for ${companyData.name}: ${logoUrl}`);
+                        if (logoUrl) {
+                            try {
+                                // Update company document with logo (only if company has an ID)
+                                if (companyData.id) {
+                                    const companyRef = doc(db, 'companies', companyData.id);
+                                    await updateDoc(companyRef, { logo: logoUrl });
+                                    console.log(`  → Updated company document with logo`);
+                                }
+                                // Update local data
+                                companyData.logo = logoUrl;
+                            } catch (err) {
+                                console.error(`Error updating logo for company ${companyData.id}:`, err);
+                            }
+                        } else {
+                            console.log(`  → No logo found for ${companyData.name}`);
+                        }
+                    });
+                    logoUpdatePromises.push(fetchPromise);
+                    }
+                }
+                
+                // Final check: Force correct logos for special companies
+                const finalCheckName = (companyData.name || '').toLowerCase().trim();
+                const finalIsAdmin = finalCheckName.includes('admin') && (
+                    finalCheckName.includes('1255') || 
+                    finalCheckName.includes('partnerships') || 
+                    finalCheckName.includes('careers')
+                );
+                if (finalIsAdmin) {
+                    logo = '/logo-icon.svg';
+                    companyData.logo = '/logo-icon.svg';
+                } else if (finalCheckName.includes('confluent')) {
+                    logo = 'https://www.confluent.io/wp-content/themes/confluent/assets/images/logo/confluent-logo.svg';
+                    companyData.logo = 'https://www.confluent.io/wp-content/themes/confluent/assets/images/logo/confluent-logo.svg';
+                } else if (finalCheckName.includes('elastic')) {
+                    logo = 'https://static-www.elastic.co/v3/assets/bltefdd0b53724fa2ce/blt280217a63b82a029/6202d3378b1f312528798412/logo-elastic.svg';
+                    companyData.logo = 'https://static-www.elastic.co/v3/assets/bltefdd0b53724fa2ce/blt280217a63b82a029/6202d3378b1f312528798412/logo-elastic.svg';
+                } else if (finalCheckName.includes('databricks')) {
+                    logo = 'https://www.databricks.com/wp-content/uploads/2020/09/databricks-logo.svg';
+                    companyData.logo = 'https://www.databricks.com/wp-content/uploads/2020/09/databricks-logo.svg';
+                } else if (finalCheckName.includes('confluent')) {
+                    logo = 'https://www.confluent.io/wp-content/themes/confluent/assets/images/logo/confluent-logo.svg';
+                    companyData.logo = 'https://www.confluent.io/wp-content/themes/confluent/assets/images/logo/confluent-logo.svg';
+                } else if (finalCheckName.includes('elastic')) {
+                    logo = 'https://static-www.elastic.co/v3/assets/bltefdd0b53724fa2ce/blt280217a63b82a029/6202d3378b1f312528798412/logo-elastic.svg';
+                    companyData.logo = 'https://static-www.elastic.co/v3/assets/bltefdd0b53724fa2ce/blt280217a63b82a029/6202d3378b1f312528798412/logo-elastic.svg';
+                } else if (finalCheckName.includes('databricks')) {
+                    logo = 'https://www.databricks.com/wp-content/uploads/2020/09/databricks-logo.svg';
+                    companyData.logo = 'https://www.databricks.com/wp-content/uploads/2020/09/databricks-logo.svg';
+                } else if (finalCheckName.includes('td synnex') || finalCheckName.includes('tdsynnex') || finalCheckName.includes('synnex spain')) {
+                    logo = 'https://www.google.com/s2/favicons?domain=tdsynnex.com&sz=256';
+                    companyData.logo = 'https://www.google.com/s2/favicons?domain=tdsynnex.com&sz=256';
+                }
+                
+                companiesArray.push({
+                    ...companyData,
+                    logo: logo || companyData.logo || ''
+                });
+            }
+            
+            // Also add companies that appear in jobs but not in companies collection
+            jobsSnapshot.forEach((docSnapshot) => {
+                const jobData = docSnapshot.data();
+                if (jobData.company) {
+                    const normalizedKey = normalizeCompanyName(jobData.company);
+                    if (!companiesMap.has(normalizedKey)) {
+                        // Company exists in jobs but not in companies collection
+                        let logo = jobData.companyLogo || '';
+                        const normalizedName = (jobData.company || '').toLowerCase().trim();
+                        // Special handling for admin accounts - ALWAYS use PC logo
+                        const isAdminAccount = normalizedName.includes('admin') && (
+                            normalizedName.includes('1255') || 
+                            normalizedName.includes('partnerships') || 
+                            normalizedName.includes('careers')
+                        );
+                        if (isAdminAccount) {
+                            // FORCE PC logo for admin accounts
+                            logo = '/logo-icon.svg';
+                        }
+                        companiesArray.push({
+                            id: null, // Not in companies collection
+                            name: jobData.company,
+                            logo: logo,
+                            website: '',
+                            fromJobs: true // Flag to indicate it came from jobs
+                        });
+                    }
+                }
+            });
+            
+            // Wait for logo fetches to complete
+            if (logoUpdatePromises.length > 0) {
+                console.log(`Waiting for ${logoUpdatePromises.length} logo fetches to complete...`);
+                await Promise.allSettled(logoUpdatePromises);
+                console.log('Logo fetches completed');
+                
+                // Re-fetch companies to get updated logos
+                const updatedSnapshot = await getDocs(companiesRef);
+                const updatedMap = new Map();
+                updatedSnapshot.forEach((docSnapshot) => {
+                    const companyData = docSnapshot.data();
+                    const normalizedKey = normalizeCompanyName(companyData.name);
+                    updatedMap.set(normalizedKey, {
+                        id: docSnapshot.id,
+                        ...companyData
+                    });
+                });
+                
+                // Update logos in companiesArray
+                companiesArray.forEach((company, index) => {
+                    const normalizedKey = normalizeCompanyName(company.name);
+                    const updated = updatedMap.get(normalizedKey);
+                    if (updated && updated.logo) {
+                        console.log(`Updating logo for ${company.name}: ${updated.logo}`);
+                        companiesArray[index].logo = updated.logo;
+                    }
+                });
+            }
+            
+            // Deduplicate companies by normalized name (case-insensitive, whitespace-insensitive)
+            const uniqueCompaniesMap = new Map();
+            companiesArray.forEach((company) => {
+                const normalizedKey = normalizeCompanyName(company.name);
+                if (normalizedKey && !uniqueCompaniesMap.has(normalizedKey)) {
+                    uniqueCompaniesMap.set(normalizedKey, company);
+                } else if (normalizedKey && uniqueCompaniesMap.has(normalizedKey)) {
+                    // If duplicate, prefer the one with an ID (from companies collection)
+                    const existing = uniqueCompaniesMap.get(normalizedKey);
+                    if (!existing.id && company.id) {
+                        // Prefer the one with ID
+                        uniqueCompaniesMap.set(normalizedKey, company);
+                    } else if (existing.id && !company.id) {
+                        // Keep existing if it has ID, but merge logo if needed
+                        if (!existing.logo && company.logo) {
+                            uniqueCompaniesMap.set(normalizedKey, { ...existing, logo: company.logo });
+                        }
+                    } else if (!existing.logo && company.logo) {
+                        // Prefer one with logo
+                        uniqueCompaniesMap.set(normalizedKey, { ...existing, logo: company.logo });
+                    } else if (!existing.name && company.name) {
+                        // Prefer one with a proper name
+                        uniqueCompaniesMap.set(normalizedKey, company);
+                    }
+                    // If both have same data quality, prefer the canonical name (with proper spacing)
+                    // "Palo Alto Networks" is better than "PaloAlto Networks"
+                    const existingName = existing.name || '';
+                    const newName = company.name || '';
+                    if (existingName.includes(' ') && !newName.includes(' ')) {
+                        // Keep existing if it has proper spacing
+                    } else if (!existingName.includes(' ') && newName.includes(' ')) {
+                        // Prefer new one if it has proper spacing
+                        uniqueCompaniesMap.set(normalizedKey, company);
+                    }
+                }
+            });
+            
+            const uniqueCompanies = Array.from(uniqueCompaniesMap.values());
+            
+            // Sort by name
+            uniqueCompanies.sort((a, b) => a.name.localeCompare(b.name));
+            console.log(`Setting ${uniqueCompanies.length} unique companies with logos:`, uniqueCompanies.map(c => ({ name: c.name, hasLogo: !!c.logo, logo: c.logo })));
+            setAllCompanies(uniqueCompanies);
+        } catch (err) {
+            console.error('Error fetching companies:', err);
+        } finally {
+            setCompaniesLoading(false);
+        }
+    };
+
     const fetchJobs = async () => {
         setLoading(true);
         setError('');
         try {
             const jobsRef = collection(db, 'jobs');
-            const q = query(jobsRef, where('status', '==', 'active'));
-            const querySnapshot = await getDocs(q);
+            let querySnapshot;
+            try {
+                // Try querying with status filter first
+                const q = query(jobsRef, where('status', '==', 'active'));
+                querySnapshot = await getDocs(q);
+            } catch (queryError) {
+                // If query fails (e.g., some jobs don't have status field), fetch all and filter
+                console.warn('Query with status filter failed, fetching all jobs and filtering:', queryError);
+                querySnapshot = await getDocs(jobsRef);
+            }
             
             const jobsArray = [];
             const summariesToAdd = {};
@@ -1138,6 +1622,44 @@ function App() {
                 try {
                     const jobData = docSnapshot.data();
                     if (!jobData) return; // Skip if no data
+                    
+                    // Filter for active jobs if we fetched all jobs (fallback case)
+                    // If status exists and is not 'active', skip this job
+                    if (jobData.status !== undefined && jobData.status !== 'active') {
+                        return;
+                    }
+                    // If status doesn't exist, treat as active (for backward compatibility)
+                    
+                    // Backfill missing postedDate
+                    if (!jobData.postedDate) {
+                        const updatePromise = (async () => {
+                            try {
+                                const jobRef = doc(db, 'jobs', docSnapshot.id);
+                                // Use createdAt if available, otherwise use current date
+                                let postedDateValue;
+                                if (jobData.createdAt) {
+                                    // If createdAt is a Firestore Timestamp, use it directly
+                                    if (jobData.createdAt.toDate) {
+                                        postedDateValue = jobData.createdAt;
+                                    } else if (jobData.createdAt.seconds) {
+                                        // If it's a timestamp object with seconds
+                                        postedDateValue = jobData.createdAt;
+                                    } else {
+                                        // If it's a string or other format, convert to Timestamp
+                                        postedDateValue = Timestamp.fromDate(new Date(jobData.createdAt));
+                                    }
+                                } else {
+                                    // Use current date
+                                    postedDateValue = Timestamp.now();
+                                }
+                                await updateDoc(jobRef, { postedDate: postedDateValue });
+                                console.log(`Updated missing postedDate for job ${docSnapshot.id}`);
+                            } catch (err) {
+                                console.error(`Error updating postedDate for job ${docSnapshot.id}:`, err);
+                            }
+                        })();
+                        logoUpdatePromises.push(updatePromise);
+                    }
                     
                     // Backfill missing logos
                     if (!jobData.companyLogo && jobData.company) {
@@ -1154,9 +1676,28 @@ function App() {
                         logoUpdatePromises.push(updatePromise);
                     }
                     
+                    // Convert Firestore Timestamp to Date string if needed
+                    let postedDate = jobData.postedDate;
+                    if (postedDate) {
+                        if (postedDate.toDate) {
+                            // Firestore Timestamp
+                            postedDate = postedDate.toDate().toISOString();
+                        } else if (postedDate.seconds) {
+                            // Timestamp object with seconds
+                            postedDate = new Date(postedDate.seconds * 1000).toISOString();
+                        } else if (typeof postedDate === 'string') {
+                            // Already a string
+                            postedDate = postedDate;
+                        } else {
+                            // Try to convert
+                            postedDate = new Date(postedDate).toISOString();
+                        }
+                    }
+                    
                     jobsArray.push({
                         id: docSnapshot.id,
                         ...jobData,
+                        postedDate: postedDate || null,
                         isFeatured: jobData.isFeatured === true,
                         learnMoreClicks: jobData.learnMoreClicks || 0,
                         totalClicks: jobData.totalClicks || 0,
@@ -1198,9 +1739,29 @@ function App() {
                 updatedSnapshot.forEach((docSnapshot) => {
                     const jobData = docSnapshot.data();
                     if (!jobData) return;
+                    
+                    // Convert Firestore Timestamp to Date string if needed
+                    let postedDate = jobData.postedDate;
+                    if (postedDate) {
+                        if (postedDate.toDate) {
+                            // Firestore Timestamp
+                            postedDate = postedDate.toDate().toISOString();
+                        } else if (postedDate.seconds) {
+                            // Timestamp object with seconds
+                            postedDate = new Date(postedDate.seconds * 1000).toISOString();
+                        } else if (typeof postedDate === 'string') {
+                            // Already a string
+                            postedDate = postedDate;
+                        } else {
+                            // Try to convert
+                            postedDate = new Date(postedDate).toISOString();
+                        }
+                    }
+                    
                     updatedJobsArray.push({
                         id: docSnapshot.id,
                         ...jobData,
+                        postedDate: postedDate || null,
                         isFeatured: jobData.isFeatured === true,
                         learnMoreClicks: jobData.learnMoreClicks || 0,
                         totalClicks: jobData.totalClicks || 0,
@@ -1244,6 +1805,153 @@ function App() {
 
     const featuredJobs = filteredJobs.filter(job => job.isFeatured);
     const regularJobs = filteredJobs.filter(job => !job.isFeatured);
+
+    // Fetch company fast facts
+    const fetchCompanyFastFacts = async (companyName, companyWebsite, jobData) => {
+        const companyKey = companyName?.toLowerCase();
+        if (!companyKey) return null;
+
+        // Check if already in state
+        if (companyFastFacts[companyKey]) {
+            return companyFastFacts[companyKey];
+        }
+
+        // Check if exists in Firestore
+        try {
+            const companiesRef = collection(db, 'companies');
+            const companiesSnapshot = await getDocs(companiesRef);
+            let companyDoc = null;
+            
+            companiesSnapshot.forEach((docSnapshot) => {
+                const data = docSnapshot.data();
+                if (data.name?.toLowerCase() === companyKey) {
+                    companyDoc = { id: docSnapshot.id, ...data };
+                }
+            });
+
+            if (companyDoc?.fastFacts) {
+                const facts = companyDoc.fastFacts;
+                // Check if data is fresh (less than 7 days old)
+                const lastRefreshed = new Date(facts.lastRefreshed);
+                const daysSinceRefresh = (new Date() - lastRefreshed) / (1000 * 60 * 60 * 24);
+                
+                if (daysSinceRefresh < 7) {
+                    setCompanyFastFacts(prev => ({ ...prev, [companyKey]: facts }));
+                    return facts;
+                }
+            }
+        } catch (error) {
+            console.error('Error checking Firestore for fast facts:', error);
+        }
+
+        // Fetch from API
+        try {
+            console.log('🔍 Fetching company fast facts for:', companyName);
+            const response = await fetch('/api/fetch-company-facts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    companyName,
+                    companyWebsite: companyWebsite || '',
+                    jobData
+                })
+            });
+
+            console.log('📡 API Response status:', response.status);
+
+            if (response.ok) {
+                const facts = await response.json();
+                console.log('✅ Received company facts:', facts);
+                
+                // Validate facts object
+                if (!facts || typeof facts !== 'object') {
+                    console.error('❌ Invalid facts object received:', facts);
+                    return null;
+                }
+                
+                // Store in Firestore
+                try {
+                    const companiesRef = collection(db, 'companies');
+                    const companiesSnapshot = await getDocs(companiesRef);
+                    let companyRef = null;
+                    
+                    companiesSnapshot.forEach((docSnapshot) => {
+                        const data = docSnapshot.data();
+                        if (data.name?.toLowerCase() === companyKey) {
+                            companyRef = doc(db, 'companies', docSnapshot.id);
+                        }
+                    });
+
+                    if (companyRef) {
+                        await updateDoc(companyRef, { fastFacts: facts });
+                        console.log('💾 Updated company document in Firestore');
+                    } else {
+                        // Create new company document
+                        await addDoc(companiesRef, {
+                            name: companyName,
+                            website: companyWebsite || '',
+                            fastFacts: facts
+                        });
+                        console.log('💾 Created new company document in Firestore');
+                    }
+                } catch (error) {
+                    console.error('❌ Error saving fast facts to Firestore:', error);
+                }
+
+                setCompanyFastFacts(prev => {
+                    const updated = { ...prev, [companyKey]: facts };
+                    console.log('✅ Company fast facts set in state. Current state:', updated);
+                    return updated;
+                });
+                return facts;
+            } else {
+                const errorText = await response.text();
+                console.error('❌ API Error:', response.status, errorText);
+                // Return fallback facts from job data
+                const fallbackFacts = {
+                    companyId: companyKey,
+                    name: companyName,
+                    oneLine: `${companyName} is a technology company focused on partnership development.`,
+                    hq: jobData?.location || null,
+                    workModel: jobData?.isRemote ? 'Remote-first' : (jobData?.location?.toLowerCase().includes('hybrid') ? 'Hybrid' : 'Onsite'),
+                    fundingStage: jobData?.companyStage || null,
+                    headcount: jobData?.companySize ? (() => {
+                        const sizeMap = {
+                            '1-10': 5, '11-50': 30, '51-200': 125, '201-500': 350,
+                            '501-1000': 750, '1001-2000': 1500, '2000-5000': 3500, '5000+': 10000
+                        };
+                        return sizeMap[jobData.companySize] || null;
+                    })() : null,
+                    links: {
+                        careers: companyWebsite ? `https://${extractDomain(companyWebsite)}/careers` : null,
+                        partners: companyWebsite ? `https://${extractDomain(companyWebsite)}/partners` : null
+                    },
+                    sources: { fallback: 'Job data' },
+                    lastRefreshed: new Date().toISOString()
+                };
+                setCompanyFastFacts(prev => ({ ...prev, [companyKey]: fallbackFacts }));
+                return fallbackFacts;
+            }
+        } catch (error) {
+            console.error('❌ Error fetching company fast facts:', error);
+        }
+
+        return null;
+    };
+
+    // Helper function to extract domain
+    const extractDomain = (urlOrName) => {
+        if (!urlOrName) return null;
+        if (urlOrName.includes('.') && !urlOrName.includes(' ')) {
+            return urlOrName.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+        }
+        try {
+            const url = new URL(urlOrName.startsWith('http') ? urlOrName : `https://${urlOrName}`);
+            return url.hostname.replace(/^www\./, '');
+        } catch {
+            return null;
+        }
+    };
 
     // Generate AI summary for a job and store in Firestore
     const generateJobSummary = async (job) => {
@@ -1328,6 +2036,8 @@ function App() {
                 await trackLearnMore(job.id, db);
                 // Generate summary if not already generated
                 await generateJobSummary(job);
+                // Fetch company fast facts
+                await fetchCompanyFastFacts(job.company, job.companyWebsite || '', job);
                 setExpandedJobs(prev => [...prev, job.id]);
             } else {
                 setExpandedJobs(prev => prev.filter(id => id !== job.id));
@@ -1511,8 +2221,8 @@ function App() {
                         throw new Error('Could not retrieve email from LinkedIn');
                     }
                     
-                    // Verify job title
-                    if (!isRecruiterRole(userData.jobTitle)) {
+                    // Verify job title (skip for whitelisted admins)
+                    if (!isWhitelistedAdmin(userData.email) && !isRecruiterRole(userData.jobTitle)) {
                         const errorMessage = `Your LinkedIn shows you're a ${userData.jobTitle || 'Unknown Title'} at ${userData.company || 'your company'}.
 
 This platform is for recruiting and HR teams only.
@@ -1543,8 +2253,20 @@ Questions? support@partnerships-careers.com`;
                     
                     if (existingCompany) {
                         // Company exists - show request access flow
+                        // Try to get admin email from claimedBy user ID
+                        let adminEmail = 'Email not available';
+                        if (existingCompany.claimedBy) {
+                            try {
+                                const adminUserDoc = await getDoc(doc(db, 'users', existingCompany.claimedBy));
+                                if (adminUserDoc.exists()) {
+                                    adminEmail = adminUserDoc.data().email || adminEmail;
+                                }
+                            } catch (err) {
+                                console.error('Error fetching admin email:', err);
+                            }
+                        }
                         setLinkedinUserData(userData);
-                        setExistingCompanyInfo(existingCompany);
+                        setExistingCompanyInfo({ ...existingCompany, claimedByEmail: adminEmail });
                         setShowRequestAccessModal(true);
                         setShowEmployerLogin(false);
                         window.history.replaceState({}, document.title, window.location.pathname);
@@ -1636,6 +2358,13 @@ Questions? support@partnerships-careers.com`;
         
         handleLinkedInCallback();
     }, []);
+
+    // Load companies when companies page opens
+    useEffect(() => {
+        if (showCompaniesPage && allCompanies.length === 0 && !companiesLoading) {
+            fetchAllCompanies();
+        }
+    }, [showCompaniesPage, allCompanies.length, companiesLoading]);
     
 
     const handleGoogleSignIn = async () => {
@@ -1980,9 +2709,9 @@ Questions? support@partnerships-careers.com`;
     // Show loading state while auth initializes
     if (authLoading) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center transition-colors duration-200">
                 <div className="text-center">
-                    <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <div className="w-16 h-16 border-4 border-indigo-600 dark:border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                     <p className="text-gray-600">Loading...</p>
                 </div>
             </div>
@@ -1992,10 +2721,10 @@ Questions? support@partnerships-careers.com`;
     // Error boundary - show error if app crashes
     if (appError) {
         return (
-            <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-                <div className="bg-white rounded-lg shadow-lg p-8 max-w-md">
-                    <h1 className="text-2xl font-bold text-red-600 mb-4">Application Error</h1>
-                    <p className="text-gray-700 mb-4">{appError?.message || 'An unexpected error occurred'}</p>
+            <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4 transition-colors duration-200">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 max-w-md transition-colors duration-200">
+                    <h1 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">Application Error</h1>
+                    <p className="text-gray-700 dark:text-gray-300 mb-4">{appError?.message || 'An unexpected error occurred'}</p>
                     <button 
                         onClick={() => {
                             setAppError(null);
@@ -2005,6 +2734,407 @@ Questions? support@partnerships-careers.com`;
                     >
                         Reload Page
                     </button>
+                </div>
+            </div>
+        );
+    }
+
+    // COMPANIES PAGE
+    if (showCompaniesPage) {
+        return (
+            <div className={`min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-200`}>
+                <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 transition-colors duration-200">
+                    <div className="max-w-7xl mx-auto px-4 py-4">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-3 logo-container">
+                                <svg width="360" height="65" viewBox="0 0 360 65" className="h-14 w-auto max-w-full sm:h-16" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="0" y="8" width="52" height="52" rx="6" fill="#4F46E5"/>
+                                    <text x="26" y="36" fontFamily="Arial, sans-serif" fontSize="22" fontWeight="bold" fill="white" textAnchor="middle" dominantBaseline="central">PC</text>
+                                    <text x="65" y="28" fontFamily="Arial, sans-serif" fontSize="22" fontWeight="700" fill="#1F2937" className="logo-text" dominantBaseline="central">Partnerships Careers</text>
+                                    <text x="65" y="50" fontFamily="Arial, sans-serif" fontSize="14" fontWeight="500" fill="#6B7280" className="logo-tagline" dominantBaseline="central">Find Your Next Partnership Role</text>
+                                </svg>
+                            </div>
+                            <div className="flex gap-4 items-center">
+                            {/* Dark Mode Toggle Button */}
+                            <button
+                                type="button"
+                                onClick={toggleDarkMode}
+                                className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200"
+                                aria-label="Toggle dark mode"
+                            >
+                                {isDarkMode ? (
+                                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                                    </svg>
+                                ) : (
+                                    <svg className="w-5 h-5 text-gray-800" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                                    </svg>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setShowCompaniesPage(false)}
+                                className="bg-purple-600 dark:bg-purple-500 text-white px-6 py-2 rounded-lg hover:bg-purple-700 dark:hover:bg-purple-600 font-medium transition-colors duration-200"
+                            >
+                                View Job Board
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+                <div className="max-w-7xl mx-auto px-4 py-8">
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Our Partner Companies</h1>
+                    <p className="text-gray-600 dark:text-gray-400 mb-8">Discover the companies hiring for partnership roles</p>
+                    
+                    {companiesLoading ? (
+                        <div className="flex justify-center items-center py-12">
+                            <div className="w-8 h-8 border-4 border-indigo-600 dark:border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                    ) : allCompanies.length === 0 ? (
+                        <div className="text-center py-12">
+                            <p className="text-gray-500 dark:text-gray-400">No companies found.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
+                            {(() => {
+                                // Reorder companies: expanded one first, then others
+                                // Use a Set to track rendered companies and prevent duplicates
+                                const renderedCompanies = new Set();
+                                const reorderedCompanies = [];
+                                
+                                if (expandedCompanyId) {
+                                    const expandedCompany = allCompanies.find(c => (c.id || c.name) === expandedCompanyId);
+                                    if (expandedCompany) {
+                                        reorderedCompanies.push(expandedCompany);
+                                        renderedCompanies.add((expandedCompany.id || expandedCompany.name)?.toLowerCase());
+                                    }
+                                }
+                                
+                                // Add remaining companies (excluding the expanded one)
+                                allCompanies.forEach((company) => {
+                                    const companyKey = (company.id || company.name)?.toLowerCase();
+                                    if (companyKey && !renderedCompanies.has(companyKey)) {
+                                        reorderedCompanies.push(company);
+                                        renderedCompanies.add(companyKey);
+                                    }
+                                });
+                                
+                                return reorderedCompanies.map((company) => {
+                                    const companyKey = company.id || company.name;
+                                    const isExpanded = expandedCompanyId === companyKey;
+                                    // Use normalized name for matching to catch variations like "Palo Alto Networks" vs "PaloAlto Networks"
+                                    const normalizedCompanyName = normalizeCompanyName(company.name);
+                                    const companyJobsList = jobs.filter(j => normalizeCompanyName(j.company) === normalizedCompanyName && j.status === 'active');
+                                    const companyJobCount = companyJobsList.length;
+                                    
+                                    return (
+                                        <div
+                                            key={companyKey}
+                                            style={{
+                                                gridColumn: isExpanded ? '1 / -1' : 'auto'
+                                            }}
+                                            className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm dark:shadow-gray-900 p-6 hover:shadow-md dark:hover:shadow-gray-800 transition-all duration-500 ease-in-out flex flex-col overflow-hidden ${
+                                                isExpanded ? '' : 'items-center'
+                                            }`}
+                                        >
+                                        {!isExpanded ? (
+                                            <>
+                                                {/* Logo container - fixed square size */}
+                                                <div className="w-32 h-32 flex items-center justify-center mb-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                                    {company.logo ? (
+                                                        <img
+                                                            src={company.logo}
+                                                            alt={company.name}
+                                                            className="w-24 h-24 object-contain"
+                                                            style={{ 
+                                                                display: 'block',
+                                                                imageRendering: 'crisp-edges',
+                                                                WebkitImageRendering: '-webkit-optimize-contrast'
+                                                            }}
+                                                            onError={(e) => {
+                                                                console.log('Logo failed to load for:', company.name, company.logo);
+                                                                // For admin accounts, try to reload the PC logo
+                                                                const normalizedName = (company.name || '').toLowerCase().trim();
+                                                                const isAdminAccount = normalizedName.includes('admin') && (
+                                                                    normalizedName.includes('1255') || 
+                                                                    normalizedName.includes('partnerships') || 
+                                                                    normalizedName.includes('careers')
+                                                                );
+                                                                if (isAdminAccount && company.logo !== '/logo-icon.svg') {
+                                                                    e.target.src = '/logo-icon.svg';
+                                                                    return;
+                                                                }
+                                                                e.target.style.display = 'none';
+                                                                const fallback = e.target.parentElement?.querySelector('.logo-fallback');
+                                                                if (fallback) {
+                                                                    fallback.style.display = 'flex';
+                                                                }
+                                                            }}
+                                                        />
+                                                    ) : null}
+                                                    <div
+                                                        className={`logo-fallback w-full h-full bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900 dark:to-purple-900 flex items-center justify-center rounded-lg ${company.logo ? 'hidden' : ''}`}
+                                                    >
+                                                        <img 
+                                                            src="/logo-icon.svg" 
+                                                            alt="PC Logo" 
+                                                            className="w-24 h-24 object-contain"
+                                                            style={{ 
+                                                                display: 'block',
+                                                                imageRendering: 'crisp-edges',
+                                                                WebkitImageRendering: '-webkit-optimize-contrast'
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <h3 className="text-sm font-semibold text-gray-900 dark:text-white text-center mb-3">{company.name}</h3>
+                                                <button
+                                                    onClick={async () => {
+                                                        setExpandedCompanyId(companyKey);
+                                                        if (companyJobsList.length > 0) {
+                                                            await generateCompanyOverview(company.name, companyJobsList);
+                                                        }
+                                                    }}
+                                                    className="w-full bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium text-sm transition-colors duration-200"
+                                                >
+                                                    See Jobs {companyJobCount > 0 && `(${companyJobCount})`}
+                                                </button>
+                                                {company.website && (
+                                                    <a
+                                                        href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 mt-2"
+                                                    >
+                                                        Visit Website →
+                                                    </a>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="w-full animate-in fade-in slide-in-from-top-4 duration-500">
+                                                {/* Expanded view */}
+                                                <div className="flex items-start justify-between mb-6 animate-in fade-in duration-300">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-24 h-24 flex items-center justify-center bg-gray-50 dark:bg-gray-700 rounded-lg flex-shrink-0">
+                                                            {company.logo ? (
+                                                                <img
+                                                                    src={company.logo}
+                                                                    alt={company.name}
+                                                                    className="w-full h-full object-contain p-2"
+                                                                    onError={(e) => {
+                                                                        e.target.style.display = 'none';
+                                                                        const fallback = e.target.parentElement?.querySelector('.logo-fallback');
+                                                                        if (fallback) {
+                                                                            fallback.style.display = 'flex';
+                                                                        }
+                                                                    }}
+                                                                />
+                                                            ) : null}
+                                                            <div
+                                                                className={`logo-fallback w-full h-full bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900 dark:to-purple-900 flex items-center justify-center text-indigo-600 dark:text-indigo-300 font-bold text-2xl rounded-lg ${company.logo ? 'hidden' : ''}`}
+                                                            >
+                                                                {company.name?.charAt(0) || 'C'}
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{company.name}</h2>
+                                                            {company.website && (
+                                                                <a
+                                                                    href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                                                                >
+                                                                    Visit Website →
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => {
+                                                            setExpandedCompanyId(null);
+                                                            setCompanyJobs([]);
+                                                            setSelectedCompanyForJobs(null);
+                                                        }}
+                                                        className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-2xl leading-none cursor-pointer"
+                                                        aria-label="Close"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </div>
+                                                
+                                                {/* Company Overview */}
+                                                <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800 animate-in fade-in slide-in-from-top-2 duration-500 delay-100">
+                                                    <h3 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-2">Company Overview</h3>
+                                                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                                                        {companySummaries[company.name?.toLowerCase()] || 'Generating overview...'}
+                                                    </p>
+                                                </div>
+                                                
+                                                {/* Jobs List */}
+                                                {companyJobsList.length === 0 ? (
+                                                    <p className="text-gray-600 dark:text-gray-400">No active jobs found for this company.</p>
+                                                ) : (
+                                                    <div>
+                                                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Available Positions</h3>
+                                                        <div className="space-y-4">
+                                                            {companyJobsList.map((job, index) => {
+                                                                const isJobExpanded = expandedJobs.includes(job.id);
+                                                                return (
+                                                                    <div
+                                                                        key={job.id || index}
+                                                                        className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600"
+                                                                    >
+                                                                        <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">{job.title}</h4>
+                                                                        
+                                                                        {/* Expanded job details */}
+                                                                        <div 
+                                                                            className={`mb-4 overflow-hidden transition-all duration-500 ease-in-out ${
+                                                                                isJobExpanded 
+                                                                                    ? 'max-h-[1000px] opacity-100' 
+                                                                                    : 'max-h-0 opacity-0'
+                                                                            }`}
+                                                                        >
+                                                                            <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                                                                                <h5 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-3">About the Role</h5>
+                                                                                <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
+                                                                                    {jobSummaries[job.id]?.role || job.roleSummary || 'Loading summary...'}
+                                                                                </p>
+                                                                                
+                                                                                {/* Company Fast Facts */}
+                                                                                {(() => {
+                                                                                    const companyKey = job.company?.toLowerCase();
+                                                                                    const facts = companyFastFacts[companyKey];
+                                                                                    if (!facts) {
+                                                                                        return (
+                                                                                            <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+                                                                                                Loading company facts...
+                                                                                            </div>
+                                                                                        );
+                                                                                    }
+                                                                                    
+                                                                                    return (
+                                                                                        <>
+                                                                                            <h5 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-3">Company Fast Facts</h5>
+                                                                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                                                                {facts.headcount && (
+                                                                                                    <div className="flex items-center gap-2">
+                                                                                                        <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                                            <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                                                                                            </svg>
+                                                                                                        </div>
+                                                                                                        <div>
+                                                                                                            <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Headcount</p>
+                                                                                                            <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{facts.headcount.toLocaleString()}</p>
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                {facts.fundingStage && (
+                                                                                                    <div className="flex items-center gap-2">
+                                                                                                        <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                                            <svg className="w-5 h-5 text-green-600 dark:text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                                                            </svg>
+                                                                                                        </div>
+                                                                                                        <div>
+                                                                                                            <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Stage</p>
+                                                                                                            <p className="text-sm font-bold text-green-600 dark:text-green-400">{facts.fundingStage}</p>
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                {facts.hq && (
+                                                                                                    <div className="flex items-center gap-2">
+                                                                                                        <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                                            <svg className="w-5 h-5 text-purple-600 dark:text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                                                            </svg>
+                                                                                                        </div>
+                                                                                                        <div>
+                                                                                                            <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">HQ</p>
+                                                                                                            <p className="text-sm font-bold text-purple-600 dark:text-purple-400">{facts.hq}</p>
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                {facts.workModel && (
+                                                                                                    <div className="flex items-center gap-2">
+                                                                                                        <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                                            <svg className="w-5 h-5 text-blue-600 dark:text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                                                                                                            </svg>
+                                                                                                        </div>
+                                                                                                        <div>
+                                                                                                            <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Work Model</p>
+                                                                                                            <p className="text-sm font-bold text-blue-600 dark:text-blue-400">{facts.workModel}</p>
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                {facts.links.careers && (
+                                                                                                    <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
+                                                                                                        <div className="flex items-center gap-2 mb-1">
+                                                                                                            <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+                                                                                                                <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                                                                                </svg>
+                                                                                                            </div>
+                                                                                                            <p className="text-xs text-gray-600 dark:text-gray-300 font-medium">Careers</p>
+                                                                                                        </div>
+                                                                                                        <a href={facts.links.careers} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
+                                                                                                            Visit →
+                                                                                                        </a>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                {facts.links.partners && (
+                                                                                                    <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
+                                                                                                        <div className="flex items-center gap-2 mb-1">
+                                                                                                            <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+                                                                                                                <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                                                                                                </svg>
+                                                                                                            </div>
+                                                                                                            <p className="text-xs text-gray-600 dark:text-gray-300 font-medium">Partners</p>
+                                                                                                        </div>
+                                                                                                        <a href={facts.links.partners} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
+                                                                                                            Visit →
+                                                                                                        </a>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </>
+                                                                                    );
+                                                                                })()}
+                                                                            </div>
+                                                                        </div>
+                                                                        
+                                                                        <div className="flex flex-col sm:flex-row gap-3">
+                                                                            <button
+                                                                                onClick={() => handleLearnMore(job)}
+                                                                                className="flex-1 sm:flex-none bg-indigo-600 text-white px-6 py-2.5 rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-sm transition-colors"
+                                                                            >
+                                                                                {isJobExpanded ? 'Show Less' : 'Learn More'}
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => trackJobClick(job.id, job.link, db)}
+                                                                                className="flex-1 sm:flex-none bg-indigo-600 text-white px-6 py-2.5 rounded-lg hover:bg-indigo-700 cursor-pointer font-medium text-sm transition-colors"
+                                                                            >
+                                                                                Apply Now
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    );
+                                });
+                            })()}
+                        </div>
+                    )}
                 </div>
             </div>
         );
@@ -2065,11 +3195,13 @@ Questions? support@partnerships-careers.com`;
             <div className={`min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-200`}>
                 <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 transition-colors duration-200">
                     <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-                        <div>
-                            <h1 className="text-xl font-bold dark:text-white">Employer Dashboard</h1>
-                            {isEmployerLoggedIn && employerFirstName && (
-                                <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">Hi, {employerFirstName}!</p>
-                            )}
+                        <div className="flex items-center gap-3 logo-container">
+                            <svg width="360" height="65" viewBox="0 0 360 65" className="h-14 w-auto max-w-full sm:h-16" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="0" y="8" width="52" height="52" rx="6" fill="#4F46E5"/>
+                                <text x="26" y="36" fontFamily="Arial, sans-serif" fontSize="22" fontWeight="bold" fill="white" textAnchor="middle" dominantBaseline="central">PC</text>
+                                <text x="65" y="28" fontFamily="Arial, sans-serif" fontSize="22" fontWeight="700" fill="#1F2937" className="logo-text" dominantBaseline="central">Partnerships Careers</text>
+                                <text x="65" y="46" fontFamily="Arial, sans-serif" fontSize="14" fontWeight="500" fill="#6B7280" className="logo-tagline" dominantBaseline="central">Find Your Next Partnership Role</text>
+                            </svg>
                         </div>
                         <div className="flex gap-4 items-center">
                             {/* Dark Mode Toggle Button */}
@@ -2466,7 +3598,7 @@ Questions? support@partnerships-careers.com`;
                                                 </div>
                                                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-1">{request.requestedByEmail}</p>
                                                 {request.jobTitle && (
-                                                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Title: {request.jobTitle}</p>
+                                                    <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-400 mb-1">Title: {request.jobTitle}</p>
                                                 )}
                                                 {request.requestedByLinkedIn && (
                                                     <a 
@@ -2581,7 +3713,7 @@ Questions? support@partnerships-careers.com`;
                                     Invite Team Member
                                 </button>
                             ) : (
-                                <div className="text-sm text-gray-500 dark:text-gray-400">
+                                <div className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-400">
                                     <div>Only admins can invite team members</div>
                                     {!isAdmin && isWhitelistedAdmin(user?.email) && (
                                         <div className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
@@ -2900,18 +4032,18 @@ Questions? support@partnerships-careers.com`;
         const companyJobs = jobs.filter(job => job.companyId === companyData.id && job.status === 'active');
         
         return (
-            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-                <header className="bg-white shadow-sm border-b">
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-200">
+                <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 transition-colors duration-200">
                     <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
                         <button 
                             onClick={() => setShowCompanyPage(false)}
-                            className="text-indigo-600 hover:text-indigo-700"
+                            className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
                         >
                             ← Back to Dashboard
                         </button>
                         <button 
                             onClick={() => setShowDashboard(false)}
-                            className="text-gray-600 hover:text-gray-900"
+                            className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
                         >
                             View Job Board
                         </button>
@@ -2953,23 +4085,23 @@ Questions? support@partnerships-careers.com`;
                                                 <span>•</span>
                                                 <span>{job.location}</span>
                                             </div>
-                                            <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
+                                            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-4">
                                                 <span>{job.company}</span>
                                                 <span>•</span>
                                                 <span>{job.type || 'Full-Time'}</span>
                                                 {job.salaryRange && job.salaryRange !== 'Competitive' && (
                                                     <>
                                                         <span>•</span>
-                                                        <span className="text-green-600 font-medium">{job.salaryRange}</span>
+                                                        <span className="text-green-600 dark:text-green-400 font-medium">{job.salaryRange}</span>
                                                     </>
                                                 )}
                                             </div>
                                             <div className="flex flex-wrap gap-2 mb-4">
-                                                <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-xs font-medium">
+                                                <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-3 py-1 rounded-full text-xs font-medium">
                                                     {job.category}
                                                 </span>
                                                 {job.isRemote && (
-                                                    <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-xs font-medium">
+                                                    <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-3 py-1 rounded-full text-xs font-medium">
                                                         Remote
                                                     </span>
                                                 )}
@@ -2977,12 +4109,12 @@ Questions? support@partnerships-careers.com`;
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={() => trackJobClick(job.id, job.link, db)}
-                                                    className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-medium text-sm"
+                                                    className="flex-1 bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium text-sm transition-colors duration-200"
                                                 >
                                                     Apply Now
                                                 </button>
                                             </div>
-                                            <p className="text-xs text-gray-500 mt-3">
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
                                                 Posted {diffDays === 0 ? 'today' : `${diffDays} days ago`}
                                             </p>
                                         </div>
@@ -2999,7 +4131,7 @@ Questions? support@partnerships-careers.com`;
     // Forgot Password page
     if (showForgotPassword) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4 transition-colors duration-200">
                 <div className="max-w-md w-full">
                     <div className="text-center mb-8">
                         <button 
@@ -3011,8 +4143,17 @@ Questions? support@partnerships-careers.com`;
                         >
                             ← Back to Login
                         </button>
-                        <h1 className="text-2xl font-bold text-gray-900 mb-2">Partnerships Careers</h1>
-                        <p className="text-gray-600">Reset Your Password</p>
+                        <div className="flex items-center gap-3 mb-2">
+                            <img 
+                                src="/logo-icon.svg" 
+                                alt="PC" 
+                                className="h-10 w-10"
+                            />
+                            <div>
+                                <h1 className="text-2xl font-bold text-gray-900">Partnerships Careers</h1>
+                                <p className="text-gray-600 text-sm">Reset Your Password</p>
+                            </div>
+                        </div>
                     </div>
                     <div className="bg-white rounded-lg shadow-lg p-8">
                         {!resetEmailSent ? (
@@ -3060,7 +4201,7 @@ Questions? support@partnerships-careers.com`;
                                 <p className="text-gray-600 mb-6">
                                     We've sent a password reset link to your email address. Please check your inbox and follow the instructions to reset your password.
                                 </p>
-                                <p className="text-sm text-gray-500 mb-6">
+                                <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
                                     Didn't receive the email? Check your spam folder or try again in a few minutes.
                                 </p>
                                 <div className="space-y-3">
@@ -3119,8 +4260,17 @@ Questions? support@partnerships-careers.com`;
                                 )}
                             </button>
                         </div>
-                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Partnerships Careers</h1>
-                        <p className="text-gray-600 dark:text-gray-300">Employer Portal</p>
+                        <div className="flex items-center gap-3 mb-2">
+                            <img 
+                                src="/logo-icon.svg" 
+                                alt="PC" 
+                                className="h-10 w-10"
+                            />
+                            <div>
+                                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Partnerships Careers</h1>
+                                <p className="text-gray-600 dark:text-gray-300 text-sm">Employer Portal</p>
+                            </div>
+                        </div>
                     </div>
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg dark:shadow-gray-900 p-8 transition-colors duration-200">
                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
@@ -3460,9 +4610,13 @@ Questions? support@partnerships-careers.com`;
             <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 transition-colors duration-200">
                 <div className="max-w-7xl mx-auto px-4 py-4">
                     <div className="flex justify-between items-center">
-                        <div>
-                            <div className="text-xl font-bold dark:text-white">Partnerships Careers</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">partnerships-careers.com</div>
+                        <div className="flex items-center gap-3 logo-container">
+                            <svg width="360" height="65" viewBox="0 0 360 65" className="h-14 w-auto max-w-full sm:h-16" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="0" y="8" width="52" height="52" rx="6" fill="#4F46E5"/>
+                                <text x="26" y="36" fontFamily="Arial, sans-serif" fontSize="22" fontWeight="bold" fill="white" textAnchor="middle" dominantBaseline="central">PC</text>
+                                <text x="65" y="28" fontFamily="Arial, sans-serif" fontSize="22" fontWeight="700" fill="#1F2937" className="logo-text" dominantBaseline="central">Partnerships Careers</text>
+                                <text x="65" y="46" fontFamily="Arial, sans-serif" fontSize="14" fontWeight="500" fill="#6B7280" className="logo-tagline" dominantBaseline="central">Find Your Next Partnership Role</text>
+                            </svg>
                         </div>
                         <div className="flex gap-4 items-center">
                             {/* Dark Mode Toggle Button */}
@@ -3529,42 +4683,320 @@ Questions? support@partnerships-careers.com`;
                 <div className="max-w-7xl mx-auto px-4">
                     <h1 className="text-5xl font-bold mb-4">Your Career in Partnerships Starts Here</h1>
                     <p className="text-xl mb-6">Connect with top companies hiring for partnership roles.</p>
-                    <div className="bg-white/10 dark:bg-white/20 rounded-lg p-6 mb-6 max-w-2xl">
-                        <div className="flex items-center gap-2 mb-3">
-                            <i data-lucide="bell" className="w-5 h-5"></i>
-                            <h3 className="font-bold">Get Job Alerts</h3>
-                        </div>
-                        <div className="flex gap-2">
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="Enter your email"
-                                className="flex-1 px-4 py-3 rounded-lg text-gray-900 dark:text-gray-100 dark:bg-gray-700 dark:placeholder-gray-400"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (email) {
-                                        alert('Thanks! We\'ll send alerts to ' + email);
-                                        setEmail('');
-                                    }
-                                }}
-                                className="bg-yellow-500 text-white px-6 py-3 rounded-lg hover:bg-yellow-600 transition-colors duration-200"
-                            >
-                                Sign Up
-                            </button>
+                    <div className="rounded-lg p-6 mb-6 max-w-2xl relative" style={{ position: 'relative' }}>
+                        <div style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            borderRadius: '0.5rem',
+                            zIndex: 0,
+                            pointerEvents: 'none'
+                        }}></div>
+                        <div style={{ position: 'relative', zIndex: 1 }}>
+                            <div className="flex items-center gap-2 mb-3">
+                                <i data-lucide="bell" className="w-5 h-5"></i>
+                                <h3 className="font-bold">Get Job Alerts</h3>
+                            </div>
+                            <div className="space-y-3">
+                            <div className="flex gap-2 relative">
+                                <input
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    placeholder="Enter your email"
+                                    className="flex-1 px-4 py-3 rounded-lg text-gray-900 dark:text-gray-100 dark:bg-gray-700 dark:placeholder-gray-400 border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                />
+                                <button
+                                    ref={signupButtonRef}
+                                    type="button"
+                                    id="job-alert-signup-button"
+                                    disabled={!email || alertSubmitting}
+                                    onClick={async () => {
+                                        if (!email) return;
+                                        
+                                        // If realtime, don't submit here - checkout expander handles it
+                                        if (alertFrequency === 'realtime') {
+                                            if (!showRealtimeCheckout) {
+                                                setShowRealtimeCheckout(true);
+                                            }
+                                            return;
+                                        }
+                                        
+                                        setAlertSubmitting(true);
+                                        try {
+                                            const response = await fetch('/api/subscribe-job-alerts', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                    email: email,
+                                                    frequency: alertFrequency
+                                                })
+                                            });
+
+                                            if (!response.ok) {
+                                                const errorData = await response.text();
+                                                let errorMessage = 'Failed to subscribe';
+                                                try {
+                                                    const parsed = JSON.parse(errorData);
+                                                    errorMessage = parsed.error || errorMessage;
+                                                } catch {
+                                                    errorMessage = errorData || errorMessage;
+                                                }
+                                                throw new Error(errorMessage);
+                                            }
+
+                                            const data = await response.json();
+
+                                            alert(`✅ Thanks! We'll send ${alertFrequency} alerts to ${email}. Check your inbox for confirmation!`);
+
+                                            setEmail('');
+                                            setAlertFrequency('weekly');
+                                            setShowRealtimeCheckout(false);
+                                        } catch (error) {
+                                            console.error('Error subscribing to alerts:', error);
+                                            alert('Error: ' + error.message);
+                                        } finally {
+                                            setAlertSubmitting(false);
+                                        }
+                                    }}
+                                    style={{
+                                        backgroundColor: '#f59e0b',
+                                        color: '#ffffff',
+                                        border: 'none',
+                                        padding: '0.75rem 1.5rem',
+                                        borderRadius: '0.5rem',
+                                        fontSize: '1rem',
+                                        fontWeight: '600',
+                                        whiteSpace: 'nowrap',
+                                        boxShadow: '0 10px 15px -3px rgba(245, 158, 11, 0.3), 0 4px 6px -2px rgba(245, 158, 11, 0.2)',
+                                        cursor: (!email || alertSubmitting) ? 'not-allowed' : 'pointer',
+                                        opacity: (!email || alertSubmitting) ? 0.5 : 1,
+                                        position: 'relative',
+                                        zIndex: 99999,
+                                        isolation: 'isolate',
+                                        transform: 'translateZ(0)',
+                                        mixBlendMode: 'normal',
+                                        filter: 'none',
+                                        WebkitAppearance: 'none',
+                                        MozAppearance: 'none',
+                                        appearance: 'none'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        if (!e.currentTarget.disabled) {
+                                            e.currentTarget.style.backgroundColor = '#d97706';
+                                            e.currentTarget.style.boxShadow = '0 20px 25px -5px rgba(217, 119, 6, 0.4), 0 10px 10px -5px rgba(217, 119, 6, 0.2)';
+                                        }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        if (!e.currentTarget.disabled) {
+                                            e.currentTarget.style.backgroundColor = '#f59e0b';
+                                            e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(245, 158, 11, 0.3), 0 4px 6px -2px rgba(245, 158, 11, 0.2)';
+                                        }
+                                    }}
+                                >
+                                    {alertSubmitting ? 'Subscribing...' : 'Sign Up'}
+                                </button>
+                            </div>
+                            {email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && (
+                                <div className="space-y-2 pt-2">
+                                    <label className="block text-sm font-medium text-white mb-3">Alert Frequency:</label>
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setAlertFrequency('daily')}
+                                            className={`p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer text-left ${
+                                                alertFrequency === 'daily' 
+                                                    ? 'bg-indigo-600 dark:bg-indigo-500 border-indigo-600 dark:border-indigo-500 text-white' 
+                                                    : 'bg-white/10 dark:bg-white/10 border-white/20 dark:border-white/20 text-white hover:bg-white/20 dark:hover:bg-white/20'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                                    alertFrequency === 'daily' 
+                                                        ? 'bg-white/20' 
+                                                        : 'bg-indigo-100 dark:bg-indigo-900/40'
+                                                }`}>
+                                                    <svg className={`w-5 h-5 ${
+                                                        alertFrequency === 'daily' 
+                                                            ? 'text-white' 
+                                                            : 'text-indigo-600 dark:text-indigo-300'
+                                                    }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                    </svg>
+                                                </div>
+                                                <span className="text-sm font-semibold">Daily</span>
+                                            </div>
+                                            <p className="text-xs opacity-90">Get new jobs every day</p>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setAlertFrequency('weekly')}
+                                            className={`p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer text-left ${
+                                                alertFrequency === 'weekly' 
+                                                    ? 'bg-indigo-600 dark:bg-indigo-500 border-indigo-600 dark:border-indigo-500 text-white' 
+                                                    : 'bg-white/10 dark:bg-white/10 border-white/20 dark:border-white/20 text-white hover:bg-white/20 dark:hover:bg-white/20'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                                    alertFrequency === 'weekly' 
+                                                        ? 'bg-white/20' 
+                                                        : 'bg-green-100 dark:bg-green-900/40'
+                                                }`}>
+                                                    <svg className={`w-5 h-5 ${
+                                                        alertFrequency === 'weekly' 
+                                                            ? 'text-white' 
+                                                            : 'text-green-600 dark:text-green-300'
+                                                    }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                    </svg>
+                                                </div>
+                                                <span className="text-sm font-semibold">Weekly</span>
+                                            </div>
+                                            <p className="text-xs opacity-90">Free weekly digest</p>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAlertFrequency('realtime');
+                                                if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                                                    setShowRealtimeCheckout(true);
+                                                }
+                                            }}
+                                            className={`p-4 rounded-lg border-2 transition-all duration-200 cursor-pointer text-left ${
+                                                alertFrequency === 'realtime' 
+                                                    ? 'bg-indigo-600 dark:bg-indigo-500 border-indigo-600 dark:border-indigo-500 text-white' 
+                                                    : 'bg-white/10 dark:bg-white/10 border-white/20 dark:border-white/20 text-white hover:bg-white/20 dark:hover:bg-white/20'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                                    alertFrequency === 'realtime' 
+                                                        ? 'bg-white/20' 
+                                                        : 'bg-purple-100 dark:bg-purple-900/40'
+                                                }`}>
+                                                    <svg className={`w-5 h-5 ${
+                                                        alertFrequency === 'realtime' 
+                                                            ? 'text-white' 
+                                                            : 'text-purple-600 dark:text-purple-300'
+                                                    }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                                    </svg>
+                                                </div>
+                                                <span className="text-sm font-semibold">Realtime</span>
+                                            </div>
+                                            <p className="text-xs opacity-90">$5/month - Instant</p>
+                                        </button>
+                                    </div>
+                                    {showRealtimeCheckout && alertFrequency === 'realtime' && (
+                                        <div className="mt-4 p-4 bg-white/10 dark:bg-white/10 rounded-lg border border-white/20">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <h4 className="text-sm font-semibold text-white">Realtime Alerts - $5/month</h4>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowRealtimeCheckout(false)}
+                                                    className="text-white/70 hover:text-white"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                            <p className="text-xs text-gray-200 mb-4">Get instant notifications when new partnership jobs are posted. Complete checkout to activate.</p>
+                                            <button
+                                                type="button"
+                                                onClick={async () => {
+                                                    if (!email) return;
+                                                    setAlertSubmitting(true);
+                                                    
+                                                    // Check if we're in local development
+                                                    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                                                    
+                                                    try {
+                                                        const response = await fetch('/api/create-realtime-checkout', {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            body: JSON.stringify({ email: email })
+                                                        });
+
+                                                        // Handle 404 or network errors (API not available locally)
+                                                        if (response.status === 404 || !response.ok) {
+                                                            if (isLocalDev) {
+                                                                throw new Error('API endpoint not available in local development. Please deploy to Vercel to test Stripe checkout, or use Vercel CLI to run serverless functions locally (vercel dev).');
+                                                            }
+                                                        }
+
+                                                        let data;
+                                                        const contentType = response.headers.get('content-type');
+                                                        
+                                                        if (contentType && contentType.includes('application/json')) {
+                                                            data = await response.json();
+                                                        } else {
+                                                            const text = await response.text();
+                                                            if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+                                                                throw new Error('API endpoint returned HTML instead of JSON. The serverless function may not be deployed or configured correctly.');
+                                                            }
+                                                            throw new Error(`Server returned invalid response (${contentType || 'unknown type'}). Expected JSON but got: ${text.substring(0, 100)}`);
+                                                        }
+
+                                                        if (!response.ok) {
+                                                            throw new Error(data.error || data.message || 'Failed to create checkout session');
+                                                        }
+
+                                                        if (!data.url) {
+                                                            throw new Error('No checkout URL received from server');
+                                                        }
+
+                                                        // Redirect to Stripe Checkout
+                                                        window.location.href = data.url;
+                                                    } catch (error) {
+                                                        console.error('Error creating checkout:', error);
+                                                        let errorMessage = error.message || 'Failed to create checkout.';
+                                                        
+                                                        if (isLocalDev && errorMessage.includes('404') || errorMessage.includes('not available')) {
+                                                            errorMessage = '⚠️ API endpoints only work when deployed to Vercel.\n\nTo test locally:\n1. Install Vercel CLI: npm i -g vercel\n2. Run: vercel dev\n\nOr deploy to Vercel to test the full checkout flow.';
+                                                        }
+                                                        
+                                                        alert('Error: ' + errorMessage);
+                                                        setAlertSubmitting(false);
+                                                    }
+                                                }}
+                                                disabled={alertSubmitting}
+                                                className="w-full bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {alertSubmitting ? 'Processing...' : 'Continue to Checkout →'}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            </div>
                         </div>
                     </div>
                     <div className="flex gap-4">
-                        <div className="bg-white/10 dark:bg-white/20 px-4 py-2 rounded-lg">
+                        <button
+                            onClick={() => {
+                                const featuredSection = document.getElementById('featured-jobs-section');
+                                if (featuredSection) {
+                                    featuredSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }
+                            }}
+                            className="bg-white/10 dark:bg-white/20 px-4 py-2 rounded-lg hover:bg-white/20 dark:hover:bg-white/30 transition-colors duration-200 cursor-pointer text-left"
+                        >
                             <div className="text-2xl font-bold">{jobs.length}</div>
                             <div>Active Jobs</div>
-                        </div>
-                        <div className="bg-white/10 dark:bg-white/20 px-4 py-2 rounded-lg">
+                        </button>
+                        <button
+                            onClick={async () => {
+                                await fetchAllCompanies();
+                                setShowCompaniesPage(true);
+                            }}
+                            className="bg-white/10 dark:bg-white/20 px-4 py-2 rounded-lg hover:bg-white/20 dark:hover:bg-white/30 transition-colors duration-200 cursor-pointer text-left"
+                        >
                             <div className="text-2xl font-bold">{new Set(jobs.map(j => j.company)).size}</div>
                             <div>Companies</div>
-                        </div>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -3631,7 +5063,7 @@ Questions? support@partnerships-careers.com`;
                             <button
                                 type="button"
                                 onClick={() => setSelectedRegion('All')}
-                                className={selectedRegion === 'All' ? 'px-5 py-2 rounded-full bg-indigo-600 text-white' : 'px-5 py-2 rounded-full bg-gray-100'}
+                                className={selectedRegion === 'All' ? 'px-5 py-2 rounded-full bg-indigo-600 dark:bg-indigo-500 text-white' : 'px-5 py-2 rounded-full bg-gray-100 dark:bg-gray-700 dark:text-gray-300'}
                             >
                                 All Regions
                             </button>
@@ -3664,7 +5096,7 @@ Questions? support@partnerships-careers.com`;
                 {(jobs.length > 0 || !loading) && (
                     <>
                         {featuredJobs.length > 0 && (
-                            <div className="mb-8">
+                            <div id="featured-jobs-section" className="mb-8 scroll-mt-8">
                                 <h2 className="text-2xl font-bold mb-4 dark:text-white">⭐ Featured Jobs</h2>
                                 {featuredJobs.map((job, index) => {
                                     const postedDate = job.postedDate ? new Date(job.postedDate) : new Date();
@@ -3681,17 +5113,45 @@ Questions? support@partnerships-careers.com`;
                                                         <img 
                                                             src={job.companyLogo}
                                                             alt={job.company}
-                                                            className="w-28 h-16 object-contain"
+                                                            className="w-28 h-16 object-contain mx-auto"
+                                                            style={{ 
+                                                                display: 'block', 
+                                                                margin: '0 auto', 
+                                                                objectPosition: 'center',
+                                                                imageRendering: 'crisp-edges',
+                                                                WebkitImageRendering: '-webkit-optimize-contrast'
+                                                            }}
                                                             onError={(e) => {
+                                                                // For admin accounts, try to reload the PC logo
+                                                                const normalizedName = (job.company || '').toLowerCase().trim();
+                                                                const isAdminAccount = normalizedName.includes('admin') && (
+                                                                    normalizedName.includes('1255') || 
+                                                                    normalizedName.includes('partnerships') || 
+                                                                    normalizedName.includes('careers')
+                                                                );
+                                                                if (isAdminAccount && job.companyLogo !== '/logo-icon.svg') {
+                                                                    e.target.src = '/logo-icon.svg';
+                                                                    return;
+                                                                }
                                                                 e.target.style.display = 'none';
                                                                 e.target.nextSibling.style.display = 'flex';
                                                             }}
                                                         />
                                                     ) : null}
                                                     <div 
-                                                        className={`w-28 h-16 bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900 dark:to-purple-900 flex items-center justify-center text-indigo-600 dark:text-indigo-300 font-bold text-2xl rounded ${job.companyLogo ? 'hidden' : ''}`}
+                                                        className={`w-28 h-16 bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900 dark:to-purple-900 flex items-center justify-center rounded ${job.companyLogo ? 'hidden' : ''}`}
                                                     >
-                                                        {job.company?.charAt(0) || 'C'}
+                                                        <img 
+                                                            src="/logo-icon.svg" 
+                                                            alt="PC Logo" 
+                                                            className="w-12 h-12 object-contain mx-auto"
+                                                            style={{ 
+                                                                display: 'block', 
+                                                                margin: '0 auto',
+                                                                imageRendering: 'crisp-edges',
+                                                                WebkitImageRendering: '-webkit-optimize-contrast'
+                                                            }}
+                                                        />
                                                     </div>
                                                 </div>
                                                 
@@ -3720,73 +5180,176 @@ Questions? support@partnerships-careers.com`;
                                                                         <span>Unspecified</span>
                                                                     </>
                                                                 )}
-                                                                {job.salaryRange && job.salaryRange !== 'Competitive' ? (
+                                                                {job.salaryRange && job.salaryRange !== 'Competitive' && job.salaryRange !== 'Unspecified' ? (
                                                                     <>
                                                                         <span>·</span>
                                                                         <span className="text-green-600 font-medium">{job.salaryRange}</span>
                                                                     </>
-                                                                ) : (
-                                                                    <>
-                                                                        <span>·</span>
-                                                                        <span className="text-green-600 font-medium">Unspecified</span>
-                                                                    </>
-                                                                )}
+                                                                ) : null}
                                                             </div>
                                                             
                                                             {/* Category Tags */}
                                                             <div className="flex flex-wrap gap-2 mb-4">
-                                                                <span className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-full text-sm font-medium">
+                                                                <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-full text-sm font-medium">
                                                                     {job.category}
                                                                 </span>
                                                                 {job.isRemote && (
-                                                                    <span className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-full text-sm font-medium">
+                                                                    <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-full text-sm font-medium">
                                                                         Remote
                                                                     </span>
                                                                 )}
                                                                 {job.hasEquity && (
-                                                                    <span className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-full text-sm font-medium">
+                                                                    <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-full text-sm font-medium">
                                                                         Equity
                                                                     </span>
                                                                 )}
                                                                 {job.hasVisa && (
-                                                                    <span className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-full text-sm font-medium">
+                                                                    <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-full text-sm font-medium">
                                                                         Visa Sponsorship
                                                                     </span>
                                                                 )}
                                                             </div>
                                                         </div>
                                                         
-                                                        {/* Right side: Level badge, star, and timestamp */}
-                                                        <div className="flex-shrink-0 flex flex-row sm:flex-col sm:items-end gap-2 sm:ml-4">
-                                                            <span className="bg-indigo-100 text-indigo-800 px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap">
-                                                                {job.level}
-                                                            </span>
+                                                        {/* Right side: Level badge, featured star (same row), and timestamp (below) */}
+                                                        <div className="flex-shrink-0 flex flex-col items-end gap-2 sm:ml-4">
+                                                            {/* Level badge and featured star in same row */}
                                                             <div className="flex items-center gap-2">
+                                                                <span className="bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap">
+                                                                    {job.level}
+                                                                </span>
                                                                 {job.isFeatured && (
-                                                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-yellow-500">
-                                                                        <span className="text-white text-[10px] font-bold">★</span>
+                                                                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-yellow-500">
+                                                                        <span className="text-white text-xs font-bold">★</span>
                                                                     </span>
                                                                 )}
-                                                                <span className="text-sm text-gray-500">
-                                                                    {diffDays === 0 ? 'Today' : diffDays === 1 ? '1d ago' : diffDays < 7 ? `${diffDays}d ago` : diffDays < 30 ? `${Math.floor(diffDays / 7)}w ago` : `${Math.floor(diffDays / 30)}mo ago`}
-                                                                </span>
                                                             </div>
+                                                            {/* Date posted below */}
+                                                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                                                                {isNaN(diffDays) || diffDays < 0 ? '' : diffDays === 0 ? 'Today' : `${diffDays}d ago`}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                     
                                                     {/* Expanded Summary */}
-                                                    {expandedJobs.includes(job.id) && (
-                                                        <div className="mb-4 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
-                                                            <h4 className="font-semibold text-indigo-900 mb-2">About the Role</h4>
-                                                            <p className="text-sm text-gray-700 mb-3">
+                                                    <div 
+                                                        className={`mb-4 overflow-hidden transition-all duration-500 ease-in-out ${
+                                                            expandedJobs.includes(job.id)
+                                                                ? 'max-h-[1000px] opacity-100' 
+                                                                : 'max-h-0 opacity-0'
+                                                        }`}
+                                                    >
+                                                        <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                                                            <h4 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-2">About the Role</h4>
+                                                            <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
                                                                 {jobSummaries[job.id]?.role || job.roleSummary || 'Loading summary...'}
                                                             </p>
-                                                            <h4 className="font-semibold text-indigo-900 mb-2">About {job.company}</h4>
-                                                            <p className="text-sm text-gray-700">
-                                                                {jobSummaries[job.id]?.company || job.companySummary || 'Loading summary...'}
-                                                            </p>
+                                                            
+                                                            {/* Company Fast Facts */}
+                                                            {(() => {
+                                                                const companyKey = job.company?.toLowerCase();
+                                                                const facts = companyFastFacts[companyKey];
+                                                                if (!facts) {
+                                                                    return (
+                                                                        <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+                                                                            Loading company facts...
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                
+                                                                return (
+                                                                    <>
+                                                                        <h4 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-3">Company Fast Facts</h4>
+                                                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                                            {facts.headcount && (
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                        <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Headcount</p>
+                                                                                        <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{facts.headcount.toLocaleString()}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            {facts.fundingStage && (
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                        <svg className="w-5 h-5 text-green-600 dark:text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Stage</p>
+                                                                                        <p className="text-sm font-bold text-green-600 dark:text-green-400">{facts.fundingStage}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            {facts.hq && (
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                        <svg className="w-5 h-5 text-purple-600 dark:text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">HQ</p>
+                                                                                        <p className="text-sm font-bold text-purple-600 dark:text-purple-400">{facts.hq}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            {facts.workModel && (
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                        <svg className="w-5 h-5 text-blue-600 dark:text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Work Model</p>
+                                                                                        <p className="text-sm font-bold text-blue-600 dark:text-blue-400">{facts.workModel}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            {facts.links.careers && (
+                                                                                <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
+                                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                                        <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+                                                                                            <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                                                            </svg>
+                                                                                        </div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-300 font-medium">Careers</p>
+                                                                                    </div>
+                                                                                    <a href={facts.links.careers} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
+                                                                                        Visit →
+                                                                                    </a>
+                                                                                </div>
+                                                                            )}
+                                                                            {facts.links.partners && (
+                                                                                <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
+                                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                                        <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+                                                                                            <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                                                                            </svg>
+                                                                                        </div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-300 font-medium">Partners</p>
+                                                                                    </div>
+                                                                                    <a href={facts.links.partners} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
+                                                                                        Visit →
+                                                                                    </a>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </>
+                                                                );
+                                                            })()}
                                                         </div>
-                                                    )}
+                                                    </div>
                                                     
                                                     {/* Buttons */}
                                                     <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mt-2">
@@ -3812,7 +5375,7 @@ Questions? support@partnerships-careers.com`;
                         )}
                         {regularJobs.length > 0 && (
                             <div>
-                                <h2 className="text-2xl font-bold mb-4">All Jobs</h2>
+                                <h2 className="text-2xl font-bold mb-4 dark:text-white">All Jobs</h2>
                                 {regularJobs.map((job, index) => {
                                     const postedDate = job.postedDate ? new Date(job.postedDate) : new Date();
                                     const today = new Date();
@@ -3828,17 +5391,45 @@ Questions? support@partnerships-careers.com`;
                                                         <img 
                                                             src={job.companyLogo}
                                                             alt={job.company}
-                                                            className="w-28 h-16 object-contain"
+                                                            className="w-28 h-16 object-contain mx-auto"
+                                                            style={{ 
+                                                                display: 'block', 
+                                                                margin: '0 auto', 
+                                                                objectPosition: 'center',
+                                                                imageRendering: 'crisp-edges',
+                                                                WebkitImageRendering: '-webkit-optimize-contrast'
+                                                            }}
                                                             onError={(e) => {
+                                                                // For admin accounts, try to reload the PC logo
+                                                                const normalizedName = (job.company || '').toLowerCase().trim();
+                                                                const isAdminAccount = normalizedName.includes('admin') && (
+                                                                    normalizedName.includes('1255') || 
+                                                                    normalizedName.includes('partnerships') || 
+                                                                    normalizedName.includes('careers')
+                                                                );
+                                                                if (isAdminAccount && job.companyLogo !== '/logo-icon.svg') {
+                                                                    e.target.src = '/logo-icon.svg';
+                                                                    return;
+                                                                }
                                                                 e.target.style.display = 'none';
                                                                 e.target.nextSibling.style.display = 'flex';
                                                             }}
                                                         />
                                                     ) : null}
                                                     <div 
-                                                        className={`w-28 h-16 bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 font-bold text-2xl rounded ${job.companyLogo ? 'hidden' : ''}`}
+                                                        className={`w-28 h-16 bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900 dark:to-purple-900 flex items-center justify-center rounded ${job.companyLogo ? 'hidden' : ''}`}
                                                     >
-                                                        {job.company?.charAt(0) || 'C'}
+                                                        <img 
+                                                            src="/logo-icon.svg" 
+                                                            alt="PC Logo" 
+                                                            className="w-12 h-12 object-contain mx-auto"
+                                                            style={{ 
+                                                                display: 'block', 
+                                                                margin: '0 auto',
+                                                                imageRendering: 'crisp-edges',
+                                                                WebkitImageRendering: '-webkit-optimize-contrast'
+                                                            }}
+                                                        />
                                                     </div>
                                                 </div>
                                                 
@@ -3867,73 +5458,176 @@ Questions? support@partnerships-careers.com`;
                                                                         <span>Unspecified</span>
                                                                     </>
                                                                 )}
-                                                                {job.salaryRange && job.salaryRange !== 'Competitive' ? (
+                                                                {job.salaryRange && job.salaryRange !== 'Competitive' && job.salaryRange !== 'Unspecified' ? (
                                                                     <>
                                                                         <span>·</span>
                                                                         <span className="text-green-600 font-medium">{job.salaryRange}</span>
                                                                     </>
-                                                                ) : (
-                                                                    <>
-                                                                        <span>·</span>
-                                                                        <span className="text-green-600 font-medium">Unspecified</span>
-                                                                    </>
-                                                                )}
+                                                                ) : null}
                                                             </div>
                                                             
                                                             {/* Category Tags */}
                                                             <div className="flex flex-wrap gap-2 mb-4">
-                                                                <span className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-full text-sm font-medium">
+                                                                <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-full text-sm font-medium">
                                                                     {job.category}
                                                                 </span>
                                                                 {job.isRemote && (
-                                                                    <span className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-full text-sm font-medium">
+                                                                    <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-full text-sm font-medium">
                                                                         Remote
                                                                     </span>
                                                                 )}
                                                                 {job.hasEquity && (
-                                                                    <span className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-full text-sm font-medium">
+                                                                    <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-full text-sm font-medium">
                                                                         Equity
                                                                     </span>
                                                                 )}
                                                                 {job.hasVisa && (
-                                                                    <span className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-full text-sm font-medium">
+                                                                    <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-full text-sm font-medium">
                                                                         Visa Sponsorship
                                                                     </span>
                                                                 )}
                                                             </div>
                                                         </div>
                                                         
-                                                        {/* Right side: Level badge, star, and timestamp */}
-                                                        <div className="flex-shrink-0 flex flex-row sm:flex-col sm:items-end gap-2 sm:ml-4">
-                                                            <span className="bg-indigo-100 text-indigo-800 px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap">
-                                                                {job.level}
-                                                            </span>
+                                                        {/* Right side: Level badge, featured star (same row), and timestamp (below) */}
+                                                        <div className="flex-shrink-0 flex flex-col items-end gap-2 sm:ml-4">
+                                                            {/* Level badge and featured star in same row */}
                                                             <div className="flex items-center gap-2">
+                                                                <span className="bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap">
+                                                                    {job.level}
+                                                                </span>
                                                                 {job.isFeatured && (
-                                                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-yellow-500">
-                                                                        <span className="text-white text-[10px] font-bold">★</span>
+                                                                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-yellow-500">
+                                                                        <span className="text-white text-xs font-bold">★</span>
                                                                     </span>
                                                                 )}
-                                                                <span className="text-sm text-gray-500">
-                                                                    {diffDays === 0 ? 'Today' : diffDays === 1 ? '1d ago' : diffDays < 7 ? `${diffDays}d ago` : diffDays < 30 ? `${Math.floor(diffDays / 7)}w ago` : `${Math.floor(diffDays / 30)}mo ago`}
-                                                                </span>
                                                             </div>
+                                                            {/* Date posted below */}
+                                                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                                                                {isNaN(diffDays) || diffDays < 0 ? '' : diffDays === 0 ? 'Today' : `${diffDays}d ago`}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                     
                                                     {/* Expanded Summary */}
-                                                    {expandedJobs.includes(job.id) && (
-                                                        <div className="mb-4 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
-                                                            <h4 className="font-semibold text-indigo-900 mb-2">About the Role</h4>
-                                                            <p className="text-sm text-gray-700 mb-3">
+                                                    <div 
+                                                        className={`mb-4 overflow-hidden transition-all duration-500 ease-in-out ${
+                                                            expandedJobs.includes(job.id)
+                                                                ? 'max-h-[1000px] opacity-100' 
+                                                                : 'max-h-0 opacity-0'
+                                                        }`}
+                                                    >
+                                                        <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                                                            <h4 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-2">About the Role</h4>
+                                                            <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
                                                                 {jobSummaries[job.id]?.role || job.roleSummary || 'Loading summary...'}
                                                             </p>
-                                                            <h4 className="font-semibold text-indigo-900 mb-2">About {job.company}</h4>
-                                                            <p className="text-sm text-gray-700">
-                                                                {jobSummaries[job.id]?.company || job.companySummary || 'Loading summary...'}
-                                                            </p>
+                                                            
+                                                            {/* Company Fast Facts */}
+                                                            {(() => {
+                                                                const companyKey = job.company?.toLowerCase();
+                                                                const facts = companyFastFacts[companyKey];
+                                                                if (!facts) {
+                                                                    return (
+                                                                        <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+                                                                            Loading company facts...
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                
+                                                                return (
+                                                                    <>
+                                                                        <h4 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-3">Company Fast Facts</h4>
+                                                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                                            {facts.headcount && (
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                        <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Headcount</p>
+                                                                                        <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{facts.headcount.toLocaleString()}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            {facts.fundingStage && (
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                        <svg className="w-5 h-5 text-green-600 dark:text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Stage</p>
+                                                                                        <p className="text-sm font-bold text-green-600 dark:text-green-400">{facts.fundingStage}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            {facts.hq && (
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                        <svg className="w-5 h-5 text-purple-600 dark:text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">HQ</p>
+                                                                                        <p className="text-sm font-bold text-purple-600 dark:text-purple-400">{facts.hq}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            {facts.workModel && (
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
+                                                                                        <svg className="w-5 h-5 text-blue-600 dark:text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Work Model</p>
+                                                                                        <p className="text-sm font-bold text-blue-600 dark:text-blue-400">{facts.workModel}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            {facts.links.careers && (
+                                                                                <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
+                                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                                        <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+                                                                                            <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                                                            </svg>
+                                                                                        </div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-300 font-medium">Careers</p>
+                                                                                    </div>
+                                                                                    <a href={facts.links.careers} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
+                                                                                        Visit →
+                                                                                    </a>
+                                                                                </div>
+                                                                            )}
+                                                                            {facts.links.partners && (
+                                                                                <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
+                                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                                        <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+                                                                                            <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                                                                            </svg>
+                                                                                        </div>
+                                                                                        <p className="text-xs text-gray-600 dark:text-gray-300 font-medium">Partners</p>
+                                                                                    </div>
+                                                                                    <a href={facts.links.partners} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
+                                                                                        Visit →
+                                                                                    </a>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </>
+                                                                );
+                                                            })()}
                                                         </div>
-                                                    )}
+                                                    </div>
                                                     
                                                     {/* Buttons */}
                                                     <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mt-2">

@@ -1,0 +1,12 @@
+<svg width="320" height="70" viewBox="0 0 320 70" xmlns="http://www.w3.org/2000/svg">
+  <!-- Indigo square with PC icon (matching button color) -->
+  <rect x="0" y="8" width="56" height="56" rx="7" fill="#4F46E5"/>
+  <text x="28" y="38" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">PC</text>
+  
+  <!-- Text: Partnerships Careers (proper capitalization) - larger and more prominent -->
+  <text x="70" y="28" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#1F2937" class="logo-text" dominant-baseline="central">Partnerships Careers</text>
+  
+  <!-- Tagline: Find Your Next Partnership Role -->
+  <text x="70" y="48" font-family="Arial, sans-serif" font-size="12" fill="#6B7280" class="logo-tagline" dominant-baseline="central">Find Your Next Partnership Role</text>
+</svg>
+
