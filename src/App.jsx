@@ -328,20 +328,45 @@ function PaymentForm({ clientSecret, onSuccess, onCancel, isProcessing, setIsPro
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
-            <PaymentElement />
-            <div className="flex gap-4 mt-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
+                <PaymentElement 
+                    options={{
+                        layout: {
+                            type: 'tabs',
+                            defaultCollapsed: false
+                        },
+                        paymentMethodOrder: ['card', 'link'],
+                        wallets: {
+                            applePay: 'never',
+                            googlePay: 'never'
+                        },
+                        fields: {
+                            billingDetails: 'never'
+                        },
+                        business: {
+                            name: 'Partnerships Careers'
+                        }
+                    }}
+                />
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 mt-4">
                 <button
                     type="submit"
                     disabled={!stripe || isProcessing}
-                    className="flex-1 bg-indigo-600 dark:bg-indigo-500 text-white py-3 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                    className="flex-1 bg-indigo-600 dark:bg-indigo-500 text-white py-2.5 sm:py-2 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 text-sm sm:text-base"
                 >
-                    {isProcessing ? 'Processing...' : 'Pay $99 and Post Job'}
+                    {isProcessing ? 'Processing...' : (
+                        <span>
+                            <span className="hidden sm:inline">Pay $99 and Post Job</span>
+                            <span className="sm:hidden">Pay $99</span>
+                        </span>
+                    )}
                 </button>
                 <button
                     type="button"
                     onClick={onCancel}
                     disabled={isProcessing}
-                    className="px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-300 transition-colors duration-200 disabled:opacity-50"
+                    className="px-4 py-2.5 sm:py-2 border border-white/30 dark:border-gray-600 rounded-lg hover:bg-white/10 dark:hover:bg-gray-700 text-white dark:text-gray-300 transition-colors duration-200 disabled:opacity-50 text-sm sm:text-base"
                 >
                     Cancel
                 </button>
@@ -736,6 +761,10 @@ function App() {
         return overview;
     };
     const [showJobForm, setShowJobForm] = useState(false);
+    const [jobUploadMethod, setJobUploadMethod] = useState(null); // 'url', 'file', or 'manual'
+    const [jobUrlInput, setJobUrlInput] = useState('');
+    const [jobFileInput, setJobFileInput] = useState(null);
+    const [isParsingJob, setIsParsingJob] = useState(false);
     const [linkedinAuthLoading, setLinkedinAuthLoading] = useState(false);
     const [showRequestAccessModal, setShowRequestAccessModal] = useState(false);
     const [existingCompanyInfo, setExistingCompanyInfo] = useState(null);
@@ -2565,41 +2594,15 @@ Questions? support@partnerships-careers.com`;
     };
 
     const handlePostNewJob = async () => {
-        // Development mode: Skip payment on localhost
-        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        
-        if (isLocalhost) {
-            // Skip payment in development - go directly to job form
-            console.log('Development mode: Skipping payment, showing job form directly');
-            setShowJobForm(true);
-            return;
-        }
-        
-        // Production: Use Stripe payment
-        try {
-            const response = await fetch('/api/create-checkout', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: 'new',
-                    employerId: user?.uid || 'unknown',
-                    company: employerCompany,
-                    email: user?.email || '', // Pass email for admin whitelist check
-                }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-                throw new Error(errorData.error || 'Failed to create checkout session');
-            }
-            const { url } = await response.json();
-            window.location.href = url;
-        } catch (error) {
-            console.error('Payment error:', error);
-            alert('Error starting payment: ' + error.message + '\n\nNote: Payments only work when deployed to Vercel. For local testing, the payment is skipped and you can post jobs directly.');
-            // Fallback: Show form anyway in case of error
-            setShowJobForm(true);
-        }
+        // Simply show the job form with 3 upload options
+        // Payment will be handled inline after form submission
+        setShowJobForm(true);
+        setJobUploadMethod(null); // Reset to show 3 options
+        setJobUrlInput('');
+        setJobFileInput(null);
+        setShowPaymentForm(false); // Ensure payment form is hidden initially
+        setPaymentClientSecret(null);
+        setPaymentIntentId(null);
     };
 
     const handleSubmitNewJob = async (e) => {
@@ -2695,6 +2698,135 @@ Questions? support@partnerships-careers.com`;
         } catch (error) {
             console.error('Error creating payment:', error);
             alert('Error processing payment: ' + error.message);
+        }
+    };
+
+    // Parse job from URL using AI
+    const handleParseJobUrl = async () => {
+        if (!jobUrlInput) {
+            alert('Please enter a job listing URL');
+            return;
+        }
+        
+        setIsParsingJob(true);
+        try {
+            const response = await fetch('/api/parse-job-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: jobUrlInput })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error(errorData.error || 'Failed to parse job URL');
+            }
+            
+            const parsedData = await response.json();
+            
+            // Populate form with parsed data
+            setNewJobData({
+                title: parsedData.title || '',
+                company: parsedData.company || employerCompany || '',
+                location: parsedData.location || '',
+                type: parsedData.type || 'Full-Time',
+                level: parsedData.level || 'Manager',
+                category: parsedData.category || 'Channel & Reseller',
+                region: parsedData.region || 'NAmer',
+                description: parsedData.description || '',
+                link: parsedData.link || jobUrlInput,
+                salaryRange: parsedData.salaryRange || '',
+                companyLogo: parsedData.companyLogo || '',
+                companyStage: parsedData.companyStage || '',
+                companySize: parsedData.companySize || '',
+                isRemote: parsedData.isRemote || false,
+                hasEquity: parsedData.hasEquity || false,
+                hasVisa: parsedData.hasVisa || false
+            });
+            
+            // Switch to manual view to show populated form
+            setJobUploadMethod('manual');
+            alert('✅ Job details extracted successfully! Please review and complete the form.');
+        } catch (error) {
+            console.error('Error parsing job URL:', error);
+            alert('Error parsing job URL: ' + error.message);
+        } finally {
+            setIsParsingJob(false);
+        }
+    };
+    
+    // Parse job from file using AI
+    const handleParseJobFile = async () => {
+        if (!jobFileInput) {
+            alert('Please select a file');
+            return;
+        }
+        
+        setIsParsingJob(true);
+        try {
+            // Convert file to base64 for Vercel serverless function compatibility
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+                try {
+                    const base64Data = reader.result.split(',')[1]; // Remove data:type;base64, prefix
+                    
+                    const response = await fetch('/api/parse-job-file', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            data: base64Data,
+                            fileName: jobFileInput.name,
+                            fileType: jobFileInput.type
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                        throw new Error(errorData.error || 'Failed to parse job file');
+                    }
+                    
+                    const parsedData = await response.json();
+                    
+                    // Populate form with parsed data
+                    setNewJobData({
+                        title: parsedData.title || '',
+                        company: parsedData.company || employerCompany || '',
+                        location: parsedData.location || '',
+                        type: parsedData.type || 'Full-Time',
+                        level: parsedData.level || 'Manager',
+                        category: parsedData.category || 'Channel & Reseller',
+                        region: parsedData.region || 'NAmer',
+                        description: parsedData.description || '',
+                        link: parsedData.link || '',
+                        salaryRange: parsedData.salaryRange || '',
+                        companyLogo: parsedData.companyLogo || '',
+                        companyStage: parsedData.companyStage || '',
+                        companySize: parsedData.companySize || '',
+                        isRemote: parsedData.isRemote || false,
+                        hasEquity: parsedData.hasEquity || false,
+                        hasVisa: parsedData.hasVisa || false
+                    });
+                    
+                    // Switch to manual view to show populated form
+                    setJobUploadMethod('manual');
+                    alert('✅ Job details extracted successfully! Please review and complete the form.');
+                    setIsParsingJob(false);
+                } catch (error) {
+                    console.error('Error parsing job file:', error);
+                    alert('Error parsing job file: ' + error.message);
+                    setIsParsingJob(false);
+                }
+            };
+            
+            reader.onerror = () => {
+                alert('Error reading file');
+                setIsParsingJob(false);
+            };
+            
+            reader.readAsDataURL(jobFileInput);
+        } catch (error) {
+            console.error('Error reading file:', error);
+            alert('Error reading file: ' + error.message);
+            setIsParsingJob(false);
         }
     };
 
@@ -3355,11 +3487,16 @@ Questions? support@partnerships-careers.com`;
                             <div className="flex justify-between items-center mb-4">
                                 <div>
                                     <h2 className="text-2xl font-bold dark:text-white mb-2">Post Your Featured Job</h2>
-                                    <p className="text-gray-600 dark:text-gray-300">Fill out the details below. Your job will be featured at the top of the job board for 30 days.</p>
+                                    <p className="text-gray-600 dark:text-gray-300">Choose how you'd like to add your job listing. Your job will be featured at the top of the job board for 30 days.</p>
                                 </div>
                                 <button 
                                     type="button"
-                                    onClick={() => setShowJobForm(false)}
+                                    onClick={() => {
+                                        setShowJobForm(false);
+                                        setJobUploadMethod(null);
+                                        setJobUrlInput('');
+                                        setJobFileInput(null);
+                                    }}
                                     className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors duration-200"
                                 >
                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3367,7 +3504,157 @@ Questions? support@partnerships-careers.com`;
                                     </svg>
                                 </button>
                             </div>
-                            <form onSubmit={handleSubmitNewJob} className="space-y-6">
+                            
+                            {/* Upload Method Selection */}
+                            {!jobUploadMethod && (
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                                    <button
+                                        type="button"
+                                        onClick={() => setJobUploadMethod('url')}
+                                        className="p-6 rounded-lg border-2 border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-all duration-200 text-left"
+                                    >
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <div className="w-10 h-10 rounded-lg bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center">
+                                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <h3 className="font-semibold text-gray-900 dark:text-white">URL Upload</h3>
+                                                <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">Powered by AI</span>
+                                            </div>
+                                        </div>
+                                        <p className="text-sm text-gray-600 dark:text-gray-300">Paste a link from your careers page and AI will automatically extract all job details.</p>
+                                    </button>
+                                    
+                                    <button
+                                        type="button"
+                                        onClick={() => setJobUploadMethod('file')}
+                                        className="p-6 rounded-lg border-2 border-green-300 dark:border-green-600 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 transition-all duration-200 text-left"
+                                    >
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <div className="w-10 h-10 rounded-lg bg-green-600 dark:bg-green-500 flex items-center justify-center">
+                                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <h3 className="font-semibold text-gray-900 dark:text-white">File Upload</h3>
+                                                <span className="text-xs text-green-600 dark:text-green-400 font-medium">PDF, DOC, DOCX</span>
+                                            </div>
+                                        </div>
+                                        <p className="text-sm text-gray-600 dark:text-gray-300">Upload a job description file and AI will extract and populate all fields automatically.</p>
+                                    </button>
+                                    
+                                    <button
+                                        type="button"
+                                        onClick={() => setJobUploadMethod('manual')}
+                                        className="p-6 rounded-lg border-2 border-purple-300 dark:border-purple-600 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-all duration-200 text-left"
+                                    >
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <div className="w-10 h-10 rounded-lg bg-purple-600 dark:bg-purple-500 flex items-center justify-center">
+                                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <h3 className="font-semibold text-gray-900 dark:text-white">Manual Upload</h3>
+                                                <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">Fill Form</span>
+                                            </div>
+                                        </div>
+                                        <p className="text-sm text-gray-600 dark:text-gray-300">Fill out the form fields manually with all job details.</p>
+                                    </button>
+                                </div>
+                            )}
+                            
+                            {/* URL Upload Section */}
+                            {jobUploadMethod === 'url' && (
+                                <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                                            <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                            </svg>
+                                            URL Upload <span className="text-xs text-indigo-600 dark:text-indigo-400">(Powered by AI)</span>
+                                        </h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => setJobUploadMethod(null)}
+                                            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="url"
+                                            value={jobUrlInput}
+                                            onChange={(e) => setJobUrlInput(e.target.value)}
+                                            placeholder="https://yourcompany.com/careers/job-id"
+                                            className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white"
+                                            disabled={isParsingJob}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleParseJobUrl}
+                                            disabled={!jobUrlInput || isParsingJob}
+                                            className="px-6 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            {isParsingJob ? 'Parsing...' : 'Parse with AI'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {/* File Upload Section */}
+                            {jobUploadMethod === 'file' && (
+                                <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                                            <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                            </svg>
+                                            File Upload <span className="text-xs text-green-600 dark:text-green-400">(PDF, DOC, DOCX)</span>
+                                        </h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setJobUploadMethod(null);
+                                                setJobFileInput(null);
+                                            }}
+                                            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        <input
+                                            type="file"
+                                            accept=".pdf,.doc,.docx"
+                                            onChange={(e) => setJobFileInput(e.target.files[0])}
+                                            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 dark:bg-gray-700 dark:text-white"
+                                            disabled={isParsingJob}
+                                        />
+                                        {jobFileInput && (
+                                            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                                                <span>Selected: {jobFileInput.name}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleParseJobFile}
+                                                    disabled={isParsingJob}
+                                                    className="ml-auto px-4 py-1.5 bg-green-600 dark:bg-green-500 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                                                >
+                                                    {isParsingJob ? 'Parsing...' : 'Parse with AI'}
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {/* Manual Form (existing) */}
+                            {jobUploadMethod === 'manual' && (
+                                <form onSubmit={handleSubmitNewJob} className="space-y-6">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Job Title *</label>
                                 <input 
@@ -3593,13 +3880,46 @@ Questions? support@partnerships-careers.com`;
                                         </button>
                                     </div>
                                 ) : (
-                                    <div className="border-t dark:border-gray-700 pt-6 mt-6">
-                                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Payment Information</h3>
+                                    <div className="mt-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Featured Job Payment - $99</h3>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowPaymentForm(false);
+                                                    setPaymentClientSecret(null);
+                                                    setPaymentIntentId(null);
+                                                }}
+                                                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
                                         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                                            Complete your payment to post your featured job listing.
+                                            Complete your payment to post your featured job listing. Your job will be featured for 30 days.
                                         </p>
-                                        {paymentClientSecret && (
-                                            <Elements stripe={stripePromise} options={{ clientSecret: paymentClientSecret }}>
+                                        {!paymentClientSecret ? (
+                                            <div className="flex items-center justify-center py-8">
+                                                <div className="flex flex-col items-center gap-3">
+                                                    <div className="w-8 h-8 border-4 border-indigo-600 dark:border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+                                                    <p className="text-sm text-gray-600 dark:text-gray-400">Loading payment form...</p>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <Elements 
+                                                stripe={stripePromise} 
+                                                options={{ 
+                                                    clientSecret: paymentClientSecret,
+                                                    appearance: {
+                                                        theme: isDarkMode ? 'night' : 'stripe',
+                                                        variables: {
+                                                            colorPrimary: '#4F46E5',
+                                                        }
+                                                    },
+                                                    loader: 'auto',
+                                                    locale: 'en'
+                                                }}
+                                            >
                                                 <PaymentForm
                                                     clientSecret={paymentClientSecret}
                                                     onSuccess={handlePaymentSuccess}
@@ -3615,7 +3935,8 @@ Questions? support@partnerships-careers.com`;
                                         )}
                                     </div>
                                 )}
-                            </form>
+                                </form>
+                            )}
                         </div>
                     )}
                     
