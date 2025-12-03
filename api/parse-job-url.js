@@ -100,10 +100,10 @@ export default async function handler(req, res) {
     console.log('[AI Parser] First 200 chars:', textContent.substring(0, 200));
 
     // Use Hugging Face to extract structured job data
-    // Format prompt for instruction-following models
-    const prompt = `<s>[INST] You are a job listing parser. Extract structured data from the following job listing content.
-
-Return ONLY a valid JSON object with these exact fields. Use empty strings "" for missing text fields, false for missing booleans.
+    // Format prompt for conversational models (Mistral uses chat format)
+    const systemPrompt = `You are a job listing parser. Extract structured data from job listings and return ONLY valid JSON. No explanations, no markdown, no code blocks.`;
+    
+    const userPrompt = `Extract structured data from the following job listing content. Return ONLY a valid JSON object with these exact fields. Use empty strings "" for missing text fields, false for missing booleans.
 
 Required JSON structure:
 {
@@ -128,43 +128,81 @@ Required JSON structure:
 Job listing content:
 ${textContent}
 
-IMPORTANT: Return ONLY the JSON object. No explanations, no markdown, no code blocks. Start with { and end with }. [/INST]`;
+IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
 
     console.log('[AI Parser] Sending to Hugging Face for parsing...');
     console.log('[AI Parser] Using model:', MODEL_NAME);
     
     let aiResponse;
     try {
-      // Try using the SDK first
-      console.log('[AI Parser] Attempting to use Hugging Face SDK...');
-      const response = await hf.textGeneration({
-        model: MODEL_NAME,
-        inputs: prompt,
-        parameters: {
-          max_new_tokens: 1500,
-          temperature: 0.1, // Lower temperature for more consistent JSON output
-          return_full_text: false,
-          do_sample: false, // Set to false for more deterministic output
-          top_p: 0.95,
-        },
-      });
-
-      aiResponse = response.generated_text?.trim();
+      // Try using chatCompletion first (for conversational models like Mistral)
+      console.log('[AI Parser] Attempting to use Hugging Face SDK with chatCompletion...');
       
-      if (!aiResponse) {
-        throw new Error('No response from Hugging Face API');
-      }
+      // Format prompt for chat completion
+      const chatMessages = [
+        {
+          role: 'system',
+          content: 'You are a job listing parser. Extract structured data from job listings and return ONLY valid JSON.'
+        },
+        {
+          role: 'user',
+          content: prompt.replace(/<s>\[INST\]|\[\/INST\]<\/s>/g, '').trim()
+        }
+      ];
+      
+      try {
+        const response = await hf.chatCompletion({
+          model: MODEL_NAME,
+          messages: chatMessages,
+          temperature: 0.1,
+          max_tokens: 1500,
+        });
 
-      console.log('[AI Parser] Raw AI response length:', aiResponse.length);
-      console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
+        aiResponse = response.choices?.[0]?.message?.content?.trim();
+        
+        if (aiResponse) {
+          console.log('[AI Parser] Chat completion succeeded');
+          console.log('[AI Parser] Raw AI response length:', aiResponse.length);
+          console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
+        } else {
+          throw new Error('No response from chatCompletion');
+        }
+      } catch (chatError) {
+        // Fallback to textGeneration if chatCompletion fails
+        console.log('[AI Parser] Chat completion failed, trying textGeneration...');
+        console.log('[AI Parser] Chat error:', chatError.message);
+        
+        const response = await hf.textGeneration({
+          model: MODEL_NAME,
+          inputs: prompt,
+          parameters: {
+            max_new_tokens: 1500,
+            temperature: 0.1,
+            return_full_text: false,
+            do_sample: false,
+            top_p: 0.95,
+          },
+        });
+
+        aiResponse = response.generated_text?.trim();
+        
+        if (!aiResponse) {
+          throw new Error('No response from Hugging Face API');
+        }
+
+        console.log('[AI Parser] Text generation succeeded');
+        console.log('[AI Parser] Raw AI response length:', aiResponse.length);
+        console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
+      }
       
     } catch (hfError) {
-      // If SDK fails, try direct REST API call as fallback
-      console.log('[AI Parser] SDK failed, trying REST API fallback...');
+      // If SDK fails, try direct REST API call as fallback using new router endpoint
+      console.log('[AI Parser] SDK failed, trying REST API fallback with new router endpoint...');
       console.error('[AI Parser] SDK error:', hfError.message);
       
       try {
-        const apiUrl = `https://api-inference.huggingface.co/models/${MODEL_NAME}`;
+        // Use the new router endpoint
+        const apiUrl = `https://router.huggingface.co/models/${MODEL_NAME}`;
         const restResponse = await fetch(apiUrl, {
           method: 'POST',
           headers: {
