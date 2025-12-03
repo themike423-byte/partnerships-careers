@@ -2906,13 +2906,12 @@ Questions? support@partnerships-careers.com`;
 
             const { clientSecret, paymentIntentId } = await paymentResponse.json();
             
-            // Show payment form
+            // Show payment form and preview
             setPaymentClientSecret(clientSecret);
             setPaymentIntentId(paymentIntentId);
             setShowPaymentForm(true);
-            setJobUploadMethod(null); // Hide URL input, show payment
-            
-            alert('✅ Job details extracted successfully! Please complete payment to post your featured job.');
+            setJobUploadMethod(null); // Hide URL input, show preview and payment
+            // Don't show alert - the preview and payment form will be visible inline
         } catch (error) {
             console.error('Error parsing job URL:', error);
             alert('Error parsing job URL: ' + error.message);
@@ -3058,9 +3057,8 @@ Questions? support@partnerships-careers.com`;
                     setPaymentClientSecret(clientSecret);
                     setPaymentIntentId(paymentIntentId);
                     setShowPaymentForm(true);
-                    setJobUploadMethod(null); // Hide file input, show payment
-                    
-                    alert('✅ Job details extracted successfully! Please complete payment to post your featured job.');
+                    setJobUploadMethod(null); // Hide file input, show preview and payment
+                    // Don't show alert - the preview and payment form will be visible inline
                     setIsParsingJob(false);
                 } catch (error) {
                     console.error('Error parsing job file:', error);
