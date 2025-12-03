@@ -232,7 +232,6 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
         const fallbackModel = modelsToTry[0];
         console.log(`[AI Parser] Trying REST API with model: ${fallbackModel}`);
         
-        try {
         // Try multiple endpoint formats for conversational models
         let restResponse;
         let restData;
