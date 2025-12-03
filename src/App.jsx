@@ -4202,24 +4202,88 @@ Questions? support@partnerships-careers.com`;
                                         </button>
                                     </div>
                                 ) : (
-                                    <div className="mt-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Featured Job Payment - $99</h3>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowPaymentForm(false);
-                                                    setPaymentClientSecret(null);
-                                                    setPaymentIntentId(null);
-                                                }}
-                                                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                                            >
-                                                ✕
-                                            </button>
-                                        </div>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                                            Complete your payment to post your featured job listing. Your job will be featured for 30 days.
-                                        </p>
+                                    <div className="mt-6 space-y-6">
+                                        {/* Job Preview Section */}
+                                        {(pendingJobData || parsedJobDataEscrow) && (
+                                            <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <span className="text-green-600 dark:text-green-400 text-xl">✅</span>
+                                                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Job Preview</h3>
+                                                </div>
+                                                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                                                    Review the job details extracted by AI. Complete payment below to post your featured job.
+                                                </p>
+                                                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                                                    {(() => {
+                                                        const previewData = parsedJobDataEscrow || pendingJobData;
+                                                        return (
+                                                            <div className="space-y-3 text-sm">
+                                                                <div className="grid grid-cols-2 gap-3">
+                                                                    <div>
+                                                                        <span className="font-medium text-gray-700 dark:text-gray-300">Title:</span>
+                                                                        <p className="text-gray-900 dark:text-white">{previewData.title || 'N/A'}</p>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="font-medium text-gray-700 dark:text-gray-300">Company:</span>
+                                                                        <p className="text-gray-900 dark:text-white">{previewData.company || 'N/A'}</p>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="font-medium text-gray-700 dark:text-gray-300">Location:</span>
+                                                                        <p className="text-gray-900 dark:text-white">{previewData.location || 'N/A'}</p>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="font-medium text-gray-700 dark:text-gray-300">Type:</span>
+                                                                        <p className="text-gray-900 dark:text-white">{previewData.type || 'N/A'}</p>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="font-medium text-gray-700 dark:text-gray-300">Level:</span>
+                                                                        <p className="text-gray-900 dark:text-white">{previewData.level || 'N/A'}</p>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="font-medium text-gray-700 dark:text-gray-300">Category:</span>
+                                                                        <p className="text-gray-900 dark:text-white">{previewData.category || 'N/A'}</p>
+                                                                    </div>
+                                                                </div>
+                                                                {previewData.description && (
+                                                                    <div>
+                                                                        <span className="font-medium text-gray-700 dark:text-gray-300">Description:</span>
+                                                                        <p className="text-gray-900 dark:text-white mt-1 line-clamp-3">{previewData.description}</p>
+                                                                    </div>
+                                                                )}
+                                                                {previewData.link && (
+                                                                    <div>
+                                                                        <span className="font-medium text-gray-700 dark:text-gray-300">Application Link:</span>
+                                                                        <a href={previewData.link} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline break-all">
+                                                                            {previewData.link}
+                                                                        </a>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                        )}
+                                        
+                                        {/* Payment Form Section */}
+                                        <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Featured Job Payment - $99</h3>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowPaymentForm(false);
+                                                        setPaymentClientSecret(null);
+                                                        setPaymentIntentId(null);
+                                                    }}
+                                                    className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                                                Complete your payment to post your featured job listing. Your job will be featured for 30 days.
+                                            </p>
                                         {!paymentClientSecret ? (
                                             <div className="flex items-center justify-center py-8">
                                                 <div className="flex flex-col items-center gap-3">
