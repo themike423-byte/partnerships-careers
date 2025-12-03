@@ -225,18 +225,21 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
       
       // Try REST API with the first model as last resort
       try {
-      // If SDK fails, try direct REST API call as fallback using new router endpoint
-      console.log('[AI Parser] SDK failed, trying REST API fallback with new router endpoint...');
-      console.error('[AI Parser] SDK error:', hfError.message);
-      
-      try {
+        // If SDK fails, try direct REST API call as fallback using new router endpoint
+        console.log('[AI Parser] SDK failed, trying REST API fallback with new router endpoint...');
+        console.error('[AI Parser] SDK error:', hfError.message);
+        
+        const fallbackModel = modelsToTry[0];
+        console.log(`[AI Parser] Trying REST API with model: ${fallbackModel}`);
+        
+        try {
         // Try multiple endpoint formats for conversational models
         let restResponse;
         let restData;
         
         // First, try the inference endpoint with messages format
         try {
-          const apiUrl = `https://api-inference.huggingface.co/models/${MODEL_NAME}`;
+          const apiUrl = `https://api-inference.huggingface.co/models/${fallbackModel}`;
           restResponse = await fetch(apiUrl, {
             method: 'POST',
             headers: {
