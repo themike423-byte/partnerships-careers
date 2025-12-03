@@ -138,73 +138,93 @@ ${textContent}
 IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
 
     console.log('[AI Parser] Sending to Hugging Face for parsing...');
-    console.log('[AI Parser] Using model:', MODEL_NAME);
+    
+    // Try multiple models if the first one fails
+    const modelsToTry = process.env.HUGGINGFACE_MODEL ? [MODEL_NAME] : DEFAULT_MODELS;
+    console.log('[AI Parser] Will try models:', modelsToTry.join(', '));
     
     let aiResponse;
-    try {
-      // Try using chatCompletion first (for conversational models like Mistral)
-      console.log('[AI Parser] Attempting to use Hugging Face SDK with chatCompletion...');
-      
-      // Format prompt for chat completion
-      const chatMessages = [
-        {
-          role: 'system',
-          content: systemPrompt
-        },
-        {
-          role: 'user',
-          content: userPrompt
-        }
-      ];
-      
+    let lastError = null;
+    
+    // Try each model until one works
+    for (const currentModel of modelsToTry) {
       try {
-        const response = await hf.chatCompletion({
-          model: MODEL_NAME,
-          messages: chatMessages,
-          temperature: 0.1,
-          max_tokens: 1500,
-        });
-
-        aiResponse = response.choices?.[0]?.message?.content?.trim();
+        console.log(`[AI Parser] Trying model: ${currentModel}`);
         
-        if (aiResponse) {
-          console.log('[AI Parser] Chat completion succeeded');
-          console.log('[AI Parser] Raw AI response length:', aiResponse.length);
-          console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
-        } else {
-          throw new Error('No response from chatCompletion');
-        }
-      } catch (chatError) {
-        // Fallback to textGeneration if chatCompletion fails
-        console.log('[AI Parser] Chat completion failed, trying textGeneration...');
-        console.log('[AI Parser] Chat error:', chatError.message);
-        
-        // Combine system and user prompts for textGeneration
-        const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
-        const response = await hf.textGeneration({
-          model: MODEL_NAME,
-          inputs: fullPrompt,
-          parameters: {
-            max_new_tokens: 1500,
-            temperature: 0.1,
-            return_full_text: false,
-            do_sample: false,
-            top_p: 0.95,
+        // Format prompt for chat completion
+        const chatMessages = [
+          {
+            role: 'system',
+            content: systemPrompt
           },
-        });
-
-        aiResponse = response.generated_text?.trim();
+          {
+            role: 'user',
+            content: userPrompt
+          }
+        ];
         
-        if (!aiResponse) {
-          throw new Error('No response from Hugging Face API');
-        }
+        // Try chatCompletion first
+        try {
+          const response = await hf.chatCompletion({
+            model: currentModel,
+            messages: chatMessages,
+            temperature: 0.1,
+            max_tokens: 1500,
+          });
 
-        console.log('[AI Parser] Text generation succeeded');
-        console.log('[AI Parser] Raw AI response length:', aiResponse.length);
-        console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
+          aiResponse = response.choices?.[0]?.message?.content?.trim();
+          
+          if (aiResponse) {
+            console.log(`[AI Parser] ✅ Chat completion succeeded with model: ${currentModel}`);
+            console.log('[AI Parser] Raw AI response length:', aiResponse.length);
+            console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
+            break; // Success! Exit the loop
+          }
+        } catch (chatError) {
+          console.log(`[AI Parser] Chat completion failed for ${currentModel}, trying textGeneration...`);
+          
+          // Fallback to textGeneration
+          const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+          const response = await hf.textGeneration({
+            model: currentModel,
+            inputs: fullPrompt,
+            parameters: {
+              max_new_tokens: 1500,
+              temperature: 0.1,
+              return_full_text: false,
+              do_sample: false,
+              top_p: 0.95,
+            },
+          });
+
+          aiResponse = response.generated_text?.trim();
+          
+          if (aiResponse) {
+            console.log(`[AI Parser] ✅ Text generation succeeded with model: ${currentModel}`);
+            console.log('[AI Parser] Raw AI response length:', aiResponse.length);
+            console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
+            break; // Success! Exit the loop
+          }
+        }
+        
+        // If we get here, both methods failed for this model
+        throw new Error(`Both chatCompletion and textGeneration failed for ${currentModel}`);
+        
+      } catch (modelError) {
+        console.error(`[AI Parser] ❌ Model ${currentModel} failed:`, modelError.message);
+        lastError = modelError;
+        // Continue to next model
+        continue;
       }
+    }
+    
+    // If we've tried all models and still no response
+    if (!aiResponse) {
+      const hfError = lastError || new Error('All models failed');
+      console.error('[AI Parser] All models failed, trying REST API fallback...');
       
-    } catch (hfError) {
+      // Try REST API with the first model as last resort
+      try {
       // If SDK fails, try direct REST API call as fallback using new router endpoint
       console.log('[AI Parser] SDK failed, trying REST API fallback with new router endpoint...');
       console.error('[AI Parser] SDK error:', hfError.message);
@@ -246,7 +266,7 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
         } catch (inferenceError) {
           console.log('[AI Parser] Inference endpoint failed, trying router endpoint...');
           // Fallback to router endpoint
-          const routerUrl = `https://router.huggingface.co/models/${MODEL_NAME}`;
+          const routerUrl = `https://router.huggingface.co/models/${fallbackModel}`;
           restResponse = await fetch(routerUrl, {
             method: 'POST',
             headers: {
