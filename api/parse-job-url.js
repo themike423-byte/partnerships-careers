@@ -235,14 +235,20 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
 
         const restData = await restResponse.json();
         
-        // Handle different response formats
+        // Handle different response formats for conversational models
         if (restData.generated_text) {
           aiResponse = restData.generated_text.trim();
+        } else if (restData.choices && restData.choices[0]?.message?.content) {
+          // Chat completion format
+          aiResponse = restData.choices[0].message.content.trim();
         } else if (Array.isArray(restData) && restData[0]?.generated_text) {
           aiResponse = restData[0].generated_text.trim();
         } else if (restData[0]?.generated_text) {
           aiResponse = restData[0].generated_text.trim();
+        } else if (typeof restData === 'string') {
+          aiResponse = restData.trim();
         } else {
+          console.error('[AI Parser] Unexpected REST API response format:', JSON.stringify(restData).substring(0, 500));
           throw new Error('Unexpected response format from Hugging Face API');
         }
 
