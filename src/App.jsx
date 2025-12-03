@@ -2787,7 +2787,9 @@ Questions? support@partnerships-careers.com`;
             
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-                throw new Error(errorData.error || 'Failed to parse job URL');
+                const errorMessage = errorData.error || errorData.message || 'Failed to parse job URL';
+                console.error('Parse job URL error:', errorData);
+                throw new Error(errorMessage);
             }
             
             const parsedData = await response.json();

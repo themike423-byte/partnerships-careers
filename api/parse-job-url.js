@@ -140,7 +140,8 @@ IMPORTANT: Return ONLY the JSON object. No explanations, no markdown, no code bl
     
     let aiResponse;
     try {
-      // Use textGeneration for instruction-following models
+      // Try using the SDK first
+      console.log('[AI Parser] Attempting to use Hugging Face SDK...');
       const response = await hf.textGeneration({
         model: MODEL_NAME,
         inputs: prompt,
@@ -163,18 +164,99 @@ IMPORTANT: Return ONLY the JSON object. No explanations, no markdown, no code bl
       console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
       
     } catch (hfError) {
-      console.error('[AI Parser] Hugging Face API error:', hfError);
-      console.error('[AI Parser] Error details:', {
-        message: hfError.message,
-        stack: hfError.stack,
-        name: hfError.name
-      });
+      // If SDK fails, try direct REST API call as fallback
+      console.log('[AI Parser] SDK failed, trying REST API fallback...');
+      console.error('[AI Parser] SDK error:', hfError.message);
       
-      return res.status(500).json({ 
-        error: 'Failed to parse with AI', 
-        message: hfError.message,
-        details: process.env.NODE_ENV === 'development' ? hfError.stack : undefined
-      });
+      try {
+        const apiUrl = `https://api-inference.huggingface.co/models/${MODEL_NAME}`;
+        const restResponse = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            inputs: prompt,
+            parameters: {
+              max_new_tokens: 1500,
+              temperature: 0.1,
+              return_full_text: false,
+              do_sample: false,
+              top_p: 0.95,
+            },
+          }),
+        });
+
+        if (!restResponse.ok) {
+          const errorText = await restResponse.text();
+          throw new Error(`Hugging Face REST API error (${restResponse.status}): ${errorText}`);
+        }
+
+        const restData = await restResponse.json();
+        
+        // Handle different response formats
+        if (restData.generated_text) {
+          aiResponse = restData.generated_text.trim();
+        } else if (Array.isArray(restData) && restData[0]?.generated_text) {
+          aiResponse = restData[0].generated_text.trim();
+        } else if (restData[0]?.generated_text) {
+          aiResponse = restData[0].generated_text.trim();
+        } else {
+          throw new Error('Unexpected response format from Hugging Face API');
+        }
+
+        if (!aiResponse) {
+          throw new Error('No response from Hugging Face REST API');
+        }
+
+        console.log('[AI Parser] REST API fallback succeeded');
+        console.log('[AI Parser] Raw AI response length:', aiResponse.length);
+        console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
+        
+      } catch (restError) {
+        // Both SDK and REST API failed
+        console.error('[AI Parser] REST API fallback also failed:', restError);
+        console.error('[AI Parser] Original SDK error:', hfError);
+        console.error('[AI Parser] Error details:', {
+          sdkError: hfError.message,
+          restError: restError.message,
+          stack: restError.stack || hfError.stack,
+          name: restError.name || hfError.name
+        });
+      
+        // Try to extract more specific error information from both errors
+        const combinedError = restError.message || hfError.message;
+        let errorMessage = 'Failed to parse with AI';
+        let errorDetails = combinedError;
+        
+        if (combinedError.includes('401') || combinedError.includes('Unauthorized')) {
+          errorMessage = 'Hugging Face API authentication failed. Please check your HUGGINGFACE_API_KEY in Vercel environment variables.';
+          errorDetails = 'Invalid or missing API key';
+        } else if (combinedError.includes('403') || combinedError.includes('Forbidden')) {
+          errorMessage = 'Hugging Face API access denied. Please check your API key permissions.';
+          errorDetails = 'API key does not have access to this model';
+        } else if (combinedError.includes('404') || combinedError.includes('Not Found')) {
+          errorMessage = `Hugging Face model not found: ${MODEL_NAME}. Please check the model name in HUGGINGFACE_MODEL.`;
+          errorDetails = 'Model may not exist or may not be accessible';
+        } else if (combinedError.includes('429') || combinedError.includes('Too Many Requests')) {
+          errorMessage = 'Hugging Face API rate limit exceeded. Please try again later.';
+          errorDetails = 'Rate limit reached';
+        } else if (combinedError.includes('503') || combinedError.includes('Service Unavailable')) {
+          errorMessage = 'Hugging Face model is currently loading. Please try again in a few moments.';
+          errorDetails = 'Model is starting up - this can take 30-60 seconds';
+        }
+        
+        return res.status(500).json({ 
+          error: errorMessage,
+          message: errorDetails,
+          originalError: combinedError,
+          model: MODEL_NAME,
+          hasApiKey: !!process.env.HUGGINGFACE_API_KEY,
+          apiKeyLength: process.env.HUGGINGFACE_API_KEY?.length || 0,
+          details: process.env.NODE_ENV === 'development' ? (restError.stack || hfError.stack) : undefined
+        });
+      }
     }
 
     // Parse the JSON response - try to extract JSON from the response
