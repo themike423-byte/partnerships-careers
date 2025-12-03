@@ -203,8 +203,10 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
       console.error('[AI Parser] SDK error:', hfError.message);
       
       try {
-        // Use the new router endpoint
+        // Use the router endpoint with conversational format
         const apiUrl = `https://router.huggingface.co/models/${MODEL_NAME}`;
+        
+        // For conversational models, use messages format
         const restResponse = await fetch(apiUrl, {
           method: 'POST',
           headers: {
@@ -212,12 +214,15 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            inputs: `${systemPrompt}\n\n${userPrompt}`,
+            inputs: {
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+              ]
+            },
             parameters: {
               max_new_tokens: 1500,
               temperature: 0.1,
-              return_full_text: false,
-              do_sample: false,
               top_p: 0.95,
             },
           }),
