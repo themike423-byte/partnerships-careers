@@ -1,14 +1,6 @@
 // Vercel Serverless Function to parse job listing from URL using Hugging Face AI
 import { HfInference } from '@huggingface/inference';
 
-// Initialize Hugging Face client
-let hf;
-if (process.env.HUGGINGFACE_API_KEY) {
-  hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
-} else {
-  console.warn('HUGGINGFACE_API_KEY not set - AI parsing will fail');
-}
-
 // Use a good instruction-following model for structured extraction
 // Options: mistralai/Mistral-7B-Instruct-v0.2, meta-llama/Llama-2-7b-chat-hf, or google/flan-t5-xxl
 const MODEL_NAME = process.env.HUGGINGFACE_MODEL || 'mistralai/Mistral-7B-Instruct-v0.2';
@@ -45,15 +37,18 @@ export default async function handler(req, res) {
 
     // Check if Hugging Face API key is configured
     if (!process.env.HUGGINGFACE_API_KEY) {
-      console.error('HUGGINGFACE_API_KEY environment variable is not set');
+      console.error('[AI Parser] HUGGINGFACE_API_KEY environment variable is not set');
       return res.status(500).json({ 
-        error: 'AI parsing not configured. Please add HUGGINGFACE_API_KEY to environment variables.' 
+        error: 'AI parsing not configured. Please add HUGGINGFACE_API_KEY to Vercel environment variables.',
+        message: 'Missing HUGGINGFACE_API_KEY'
       });
     }
 
-    if (!hf) {
-      hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
-    }
+    // Initialize Hugging Face client inside handler (better for serverless)
+    const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+    console.log('[AI Parser] Hugging Face client initialized');
+    console.log('[AI Parser] API key length:', process.env.HUGGINGFACE_API_KEY.length);
+    console.log('[AI Parser] API key starts with:', process.env.HUGGINGFACE_API_KEY.substring(0, 5));
 
     // Fetch the URL content
     console.log('[AI Parser] Fetching URL content:', url);
