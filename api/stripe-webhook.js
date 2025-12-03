@@ -30,6 +30,45 @@ export default async function handler(req, res) {
         const paymentIntent = event.data.object;
         console.log('Payment intent succeeded:', paymentIntent.id);
         
+        // Initialize Firebase Admin if not already done
+        initializeFirebaseAdmin();
+        
+        // Handle new job postings (embedded payment)
+        if (paymentIntent.metadata && paymentIntent.metadata.type === 'new_job' && paymentIntent.metadata.pendingJobId) {
+          try {
+            const pendingJobId = paymentIntent.metadata.pendingJobId;
+            const pendingJobRef = db.collection('pendingJobs').doc(pendingJobId);
+            const pendingJobDoc = await pendingJobRef.get();
+            
+            if (pendingJobDoc.exists) {
+              const jobData = pendingJobDoc.data();
+              
+              // Post job to Firestore jobs collection
+              const jobRef = await db.collection('jobs').add({
+                ...jobData,
+                status: 'active',
+                postedDate: new Date().toISOString(),
+                paymentIntentId: paymentIntent.id,
+                paymentCompletedAt: new Date().toISOString(),
+              });
+              
+              console.log(`Job posted to Firestore with ID: ${jobRef.id}`);
+              
+              // Update pending job status
+              await pendingJobRef.update({
+                status: 'completed',
+                jobId: jobRef.id,
+                updatedAt: new Date().toISOString(),
+              });
+              
+              // Clean up pending job after 24 hours (optional - can be done via scheduled function)
+            }
+          } catch (error) {
+            console.error('Error posting job after payment:', error);
+          }
+          return res.status(200).json({ received: true });
+        }
+        
         // Handle subscription payment intents for realtime alerts
         if (paymentIntent.metadata && (
           paymentIntent.metadata.type === 'realtime_alerts' || 
