@@ -203,37 +203,72 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
       console.error('[AI Parser] SDK error:', hfError.message);
       
       try {
-        // Use the router endpoint with conversational format
-        const apiUrl = `https://router.huggingface.co/models/${MODEL_NAME}`;
+        // Try multiple endpoint formats for conversational models
+        let restResponse;
+        let restData;
         
-        // For conversational models, use messages format
-        const restResponse = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            inputs: {
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userPrompt }
-              ]
+        // First, try the inference endpoint with messages format
+        try {
+          const apiUrl = `https://api-inference.huggingface.co/models/${MODEL_NAME}`;
+          restResponse = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+              'Content-Type': 'application/json',
             },
-            parameters: {
-              max_new_tokens: 1500,
-              temperature: 0.1,
-              top_p: 0.95,
+            body: JSON.stringify({
+              inputs: {
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: userPrompt }
+                ]
+              },
+              parameters: {
+                max_new_tokens: 1500,
+                temperature: 0.1,
+                top_p: 0.95,
+              },
+            }),
+          });
+          
+          if (restResponse.ok) {
+            restData = await restResponse.json();
+          } else {
+            throw new Error(`Inference endpoint returned ${restResponse.status}`);
+          }
+        } catch (inferenceError) {
+          console.log('[AI Parser] Inference endpoint failed, trying router endpoint...');
+          // Fallback to router endpoint
+          const routerUrl = `https://router.huggingface.co/models/${MODEL_NAME}`;
+          restResponse = await fetch(routerUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+              'Content-Type': 'application/json',
             },
-          }),
-        });
-
-        if (!restResponse.ok) {
-          const errorText = await restResponse.text();
-          throw new Error(`Hugging Face REST API error (${restResponse.status}): ${errorText}`);
+            body: JSON.stringify({
+              inputs: {
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: userPrompt }
+                ]
+              },
+              parameters: {
+                max_new_tokens: 1500,
+                temperature: 0.1,
+                top_p: 0.95,
+              },
+            }),
+          });
+          
+          if (!restResponse.ok) {
+            const errorText = await restResponse.text();
+            throw new Error(`Hugging Face REST API error (${restResponse.status}): ${errorText}`);
+          }
+          
+          restData = await restResponse.json();
         }
 
-        const restData = await restResponse.json();
         
         // Handle different response formats for conversational models
         if (restData.generated_text) {
