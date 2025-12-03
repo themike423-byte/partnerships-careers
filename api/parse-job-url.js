@@ -142,11 +142,11 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
       const chatMessages = [
         {
           role: 'system',
-          content: 'You are a job listing parser. Extract structured data from job listings and return ONLY valid JSON.'
+          content: systemPrompt
         },
         {
           role: 'user',
-          content: prompt.replace(/<s>\[INST\]|\[\/INST\]<\/s>/g, '').trim()
+          content: userPrompt
         }
       ];
       
@@ -172,9 +172,11 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
         console.log('[AI Parser] Chat completion failed, trying textGeneration...');
         console.log('[AI Parser] Chat error:', chatError.message);
         
+        // Combine system and user prompts for textGeneration
+        const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
         const response = await hf.textGeneration({
           model: MODEL_NAME,
-          inputs: prompt,
+          inputs: fullPrompt,
           parameters: {
             max_new_tokens: 1500,
             temperature: 0.1,
@@ -210,7 +212,7 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            inputs: prompt,
+            inputs: `${systemPrompt}\n\n${userPrompt}`,
             parameters: {
               max_new_tokens: 1500,
               temperature: 0.1,
