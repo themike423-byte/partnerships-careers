@@ -325,7 +325,7 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
         console.log('[AI Parser] Raw AI response length:', aiResponse.length);
         console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
         
-      } catch (restError) {
+        } catch (restError) {
         // Both SDK and REST API failed
         console.error('[AI Parser] REST API fallback also failed:', restError);
         console.error('[AI Parser] Original SDK error:', hfError);
