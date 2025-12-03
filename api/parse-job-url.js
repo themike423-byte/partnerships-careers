@@ -325,7 +325,7 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
         console.log('[AI Parser] Raw AI response length:', aiResponse.length);
         console.log('[AI Parser] First 500 chars of response:', aiResponse.substring(0, 500));
         
-        } catch (restError) {
+      } catch (restError) {
         // Both SDK and REST API failed
         console.error('[AI Parser] REST API fallback also failed:', restError);
         console.error('[AI Parser] Original SDK error:', hfError);
@@ -366,17 +366,6 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
           hasApiKey: !!process.env.HUGGINGFACE_API_KEY,
           apiKeyLength: process.env.HUGGINGFACE_API_KEY?.length || 0,
           details: process.env.NODE_ENV === 'development' ? (restError.stack || hfError.stack) : undefined
-        });
-      } catch (outerError) {
-        // If REST API fallback also completely fails
-        console.error('[AI Parser] REST API fallback completely failed:', outerError);
-        return res.status(500).json({ 
-          error: 'Failed to parse with AI',
-          message: outerError.message || 'All AI parsing methods failed',
-          originalError: hfError.message,
-          model: MODEL_NAME,
-          hasApiKey: !!process.env.HUGGINGFACE_API_KEY,
-          details: process.env.NODE_ENV === 'development' ? outerError.stack : undefined
         });
       }
     }
