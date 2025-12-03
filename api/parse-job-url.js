@@ -367,6 +367,17 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
           apiKeyLength: process.env.HUGGINGFACE_API_KEY?.length || 0,
           details: process.env.NODE_ENV === 'development' ? (restError.stack || hfError.stack) : undefined
         });
+      } catch (outerError) {
+        // If REST API fallback also completely fails
+        console.error('[AI Parser] REST API fallback completely failed:', outerError);
+        return res.status(500).json({ 
+          error: 'Failed to parse with AI',
+          message: outerError.message || 'All AI parsing methods failed',
+          originalError: hfError.message,
+          model: MODEL_NAME,
+          hasApiKey: !!process.env.HUGGINGFACE_API_KEY,
+          details: process.env.NODE_ENV === 'development' ? outerError.stack : undefined
+        });
       }
     }
 
