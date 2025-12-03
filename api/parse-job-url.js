@@ -1,13 +1,13 @@
 // Vercel Serverless Function to parse job listing from URL using Hugging Face AI
 import { HfInference } from '@huggingface/inference';
 
-// Use a good instruction-following model for structured extraction
-// Try multiple models in order of preference
+// Use models that are commonly available via serverless inference
+// These models work without requiring specific inference providers
 const DEFAULT_MODELS = [
-  'mistralai/Mistral-7B-Instruct-v0.1', // Try v0.1 first (more stable)
-  'mistralai/Mistral-7B-Instruct-v0.2',
-  'google/flan-t5-xxl', // Fallback to T5 if Mistral fails
-  'microsoft/DialoGPT-large' // Last resort
+  'microsoft/Phi-3-mini-4k-instruct', // Lightweight, commonly available
+  'google/flan-t5-large', // Smaller T5 model, more likely to be available
+  'mistralai/Mistral-7B-Instruct-v0.2', // Try Mistral if available
+  'meta-llama/Llama-3.1-8B-Instruct' // Llama 3.1 if available
 ];
 
 const MODEL_NAME = process.env.HUGGINGFACE_MODEL || DEFAULT_MODELS[0];
@@ -236,8 +236,9 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
         let restResponse;
         let restData;
         
-        // First, try the inference endpoint with messages format
+        // First, try the serverless inference endpoint (works without providers)
         try {
+          // Use the serverless inference API which doesn't require providers
           const apiUrl = `https://api-inference.huggingface.co/models/${fallbackModel}`;
           restResponse = await fetch(apiUrl, {
             method: 'POST',
@@ -246,16 +247,12 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              inputs: {
-                messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user', content: userPrompt }
-                ]
-              },
+              inputs: `${systemPrompt}\n\n${userPrompt}`,
               parameters: {
                 max_new_tokens: 1500,
                 temperature: 0.1,
                 top_p: 0.95,
+                return_full_text: false,
               },
             }),
           });
@@ -267,7 +264,7 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
           }
         } catch (inferenceError) {
           console.log('[AI Parser] Inference endpoint failed, trying router endpoint...');
-          // Fallback to router endpoint
+          // Fallback to router endpoint with simple text input
           const routerUrl = `https://router.huggingface.co/models/${fallbackModel}`;
           restResponse = await fetch(routerUrl, {
             method: 'POST',
@@ -276,16 +273,12 @@ IMPORTANT: Return ONLY the JSON object. Start with { and end with }.`;
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              inputs: {
-                messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user', content: userPrompt }
-                ]
-              },
+              inputs: `${systemPrompt}\n\n${userPrompt}`,
               parameters: {
                 max_new_tokens: 1500,
                 temperature: 0.1,
                 top_p: 0.95,
+                return_full_text: false,
               },
             }),
           });
