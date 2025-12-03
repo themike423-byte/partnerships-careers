@@ -2,8 +2,15 @@
 import { HfInference } from '@huggingface/inference';
 
 // Use a good instruction-following model for structured extraction
-// Options: mistralai/Mistral-7B-Instruct-v0.2, meta-llama/Llama-2-7b-chat-hf, or google/flan-t5-xxl
-const MODEL_NAME = process.env.HUGGINGFACE_MODEL || 'mistralai/Mistral-7B-Instruct-v0.2';
+// Try multiple models in order of preference
+const DEFAULT_MODELS = [
+  'mistralai/Mistral-7B-Instruct-v0.1', // Try v0.1 first (more stable)
+  'mistralai/Mistral-7B-Instruct-v0.2',
+  'google/flan-t5-xxl', // Fallback to T5 if Mistral fails
+  'microsoft/DialoGPT-large' // Last resort
+];
+
+const MODEL_NAME = process.env.HUGGINGFACE_MODEL || DEFAULT_MODELS[0];
 
 export default async function handler(req, res) {
   // Enable CORS
